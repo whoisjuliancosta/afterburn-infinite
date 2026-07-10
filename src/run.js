@@ -6,7 +6,7 @@ export function createRun() {
     score: 0, streak: 0, wave: 1, over: false,
     heartProgress: 0, // 0..1 accumulator toward the next heart (red gems)
     stats: {
-      kills: 0, shotsFired: 0, shotsHit: 0, dashes: 0,
+      kills: 0, shotsFired: 0, shotsHit: 0, boostTime: 0,
       gemsCollected: 0, bossKills: 0, runTime: 0,
     },
   };

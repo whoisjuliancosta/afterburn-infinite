@@ -373,7 +373,7 @@ export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], 
     ['accuracy', `${acc}%`],
     ['waves', run.wave],
     ['gems', st.gemsCollected || 0],
-    ['dashes', st.dashes || 0],
+    ['boost', `${(st.boostTime || 0).toFixed(1)}s`],
     ['boss kills', st.bossKills || 0],
     ['time', timeStr],
   ];

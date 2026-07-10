@@ -69,8 +69,11 @@ export function rollDrop(rng, isBig = false) {
 }
 
 // Move / magnetise / age / cull every gem for dt seconds. Returns an array of
-// collected gems {x, y, value} (culled expired gems are NOT returned).
-export function updateGems(g, ship, dt) {
+// collected gems {x, y, value, kind} (culled expired gems are NOT returned).
+// `magnetRadius` is the effective pull radius (default GEMS.magnetRadius); main
+// passes GEMS.magnetRadius × the ship's Attractor multiplier so the pull zone
+// tracks the rendered force-field ring.
+export function updateGems(g, ship, dt, magnetRadius = GEMS.magnetRadius) {
   const collected = [];
   const kept = [];
   for (const gem of g.list) {
@@ -87,7 +90,7 @@ export function updateGems(g, ship, dt) {
       continue;
     }
 
-    if (d < GEMS.magnetRadius && d > 1e-6) {
+    if (d < magnetRadius && d > 1e-6) {
       // Magnet: accelerate toward the ship. Overrides scatter damping.
       gem.vx += (dx / d) * GEMS.magnetAccel * dt;
       gem.vy += (dy / d) * GEMS.magnetAccel * dt;

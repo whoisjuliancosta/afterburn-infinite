@@ -24,7 +24,7 @@ test('addKill scores base * multiplier and grows streak', () => {
 test('createRun initializes flat stats block at zero', () => {
   const run = createRun();
   assert.deepEqual(run.stats, {
-    kills: 0, shotsFired: 0, shotsHit: 0, dashes: 0,
+    kills: 0, shotsFired: 0, shotsHit: 0, boostTime: 0,
     gemsCollected: 0, bossKills: 0, runTime: 0,
   });
 });

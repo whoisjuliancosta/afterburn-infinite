@@ -58,6 +58,26 @@ test('magnet does NOT pull a gem outside magnetRadius', () => {
   assert.equal(g.list[0].x, 200);
 });
 
+test('updateGems honors an explicit (smaller) magnetRadius — no pull outside it', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 150, 0, 10, makeRng(1));
+  gem.vx = 0; gem.vy = 0;
+  const ship = { x: 0, y: 0, radius: 18 };
+  updateGems(g, ship, 0.1, 100); // 150 > 100 shrunk radius → no acceleration
+  assert.equal(g.list[0].vx, 0);
+  assert.equal(g.list[0].x, 150);
+});
+
+test('updateGems honors an explicit (larger) magnetRadius — pulls a gem the default ignores', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 260, 0, 10, makeRng(1)); // 260 > default 200, would be ignored
+  gem.vx = 0; gem.vy = 0;
+  const ship = { x: 0, y: 0, radius: 18 };
+  updateGems(g, ship, 0.1, 300); // 260 < 300 → pulled toward origin
+  assert.ok(g.list[0].vx < 0);
+  assert.ok(g.list[0].x < 260);
+});
+
 test('gem speed is capped at GEMS.maxSpeed', () => {
   const g = createGems();
   const gem = spawnGem(g, 50, 0, 10, makeRng(1));

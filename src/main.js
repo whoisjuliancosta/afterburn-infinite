@@ -1,12 +1,13 @@
 // src/main.js
-import { WAVE, CRIT } from './config.js';
+import { WAVE, CRIT, GEMS, ROCKET } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
 import { createShip, updateShip, updateGun } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
 import { spawnEnemy, updateEnemy, deathSpawns } from './enemies.js';
 import { buildWave, scheduleWave } from './waves.js';
-import { createRun, addKill, hitPlayer, multiplier } from './run.js';
+import { createRun, addKill, hitPlayer, multiplier, applyGem } from './run.js';
 import { createGems, spawnGem, spawnGemRing, updateGems, gemBlinking, rollDrop } from './gems.js';
+import { createRockets, fireRocket, updateRockets } from './rockets.js';
 import { loadBoard, recordRun, saveBoard, placed } from './board.js';
 import { rollOffers, applyUpgrade } from './upgrades.js';
 import { createFloaters, addFloater, updateFloaters } from './floaters.js';
@@ -15,7 +16,7 @@ import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
 import { initAudio, sfxShot, sfxBoost, sfxRocket, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
-import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause } from './hud.js';
+import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing } from './hud.js';
 import { createInput } from './input.js';
 
 const canvas = document.getElementById('game');
@@ -65,13 +66,15 @@ let best = loadBest();
 let board = loadBoard();  // local leaderboard, top 5
 let placedIdx = -1;       // where the just-finished run placed on the board (-1 = didn't)
 let clock = 0; // global animation clock (sprite frames, previews, floaters)
-let run, ship, bullets, enemies, enemyShots, telegraphs, pending, waveT, fx, floaters, gems, offers;
+let run, ship, bullets, enemies, enemyShots, telegraphs, pending, waveT, fx, floaters, gems, rockets, offers;
 let explosions = []; // one-shot 9-frame explosion FX entities at kill points
 let powerLevel;         // upgrades taken this run (feeds wave budget)
 let thrusting = false;  // last-frame movement state, for the engine flame
-let moveAngle = 0;      // direction of travel input — the plume points opposite this
-let shipTrail = [];     // recent {x, y, angle} for the dash afterimage
-let dashTrailT = 0;     // afterimage lifetime countdown
+let moveAngle = 0;      // nose direction while thrusting — the plume points opposite this
+let boosting = false;   // last-frame boost state (plume scale, afterimage, sfx edge)
+let wasBoosting = false;// prior-frame boost state, for the boost-start sfx edge
+let shipTrail = [];     // recent {x, y, angle} for the boost afterimage
+let boostTrailT = 0;    // afterimage lifetime countdown (kept fresh while boosting)
 
 const HOSTILE = '#ff5b8a'; // enemy-shot color
 
@@ -85,13 +88,16 @@ function startRun() {
   fx = createFx();
   floaters = createFloaters();
   gems = createGems();
+  rockets = createRockets();
   offers = [];
   explosions = [];
   placedIdx = -1;
   powerLevel = 0;
   thrusting = false;
+  boosting = false;
+  wasBoosting = false;
   shipTrail = [];
-  dashTrailT = 0;
+  boostTrailT = 0;
   startWave(1);
   mode = 'playing';
 }
@@ -122,10 +128,10 @@ function killEnemy(e) {
   // enemies roll a single scattered gem via rollDrop (blue/red/none).
   const gemValue = Math.max(10, Math.round(e.score / 8));
   if (e.type === 'boss') {
-    spawnGemRing(gems, e.x, e.y, gemValue, 6, rng);
+    // Boss death ring: 6 blue (boost) + 2 red (heart) gems (spec C).
+    spawnGemRing(gems, e.x, e.y, gemValue, 6, rng, 'blue');
+    spawnGemRing(gems, e.x, e.y, gemValue, 2, rng, 'red');
     ship.hp = Math.min(ship.maxHp, ship.hp + 1);       // heal 1 heart (capped)
-    ship.dash.charges = ship.dash.max;                 // instant full dash recharge
-    ship.dash.recharge = 0;                            // recharge idle
     spawnExplosion(e.x, e.y, e.radius, true);
     burst(fx, e.x, e.y, '#ff9e3e', 21, rng, 260, true); // halved: sprite carries it
     addShake(fx, 16);
@@ -133,7 +139,7 @@ function killEnemy(e) {
     sfxBossDown();
   } else {
     // Gems v2: one mutually-exclusive roll → blue (boost) / red (heart) / none.
-    // Full collect-payout wiring lands in T7; this keeps drops flowing meanwhile.
+    // Splitter and boss-class kills roll red at 2× (isBig).
     const kind = rollDrop(rng, e.type === 'splitter');
     if (kind) spawnGem(gems, e.x, e.y, gemValue, rng, kind);
     spawnExplosion(e.x, e.y, e.radius);
@@ -170,14 +176,21 @@ function damagePlayer() {
   }
 }
 
-// Award a single gem's payout: score (×multiplier) and the gemsCollected stat.
-// Shared by the collect path and the wave-clear vacuum so both stay in lockstep.
-// Visual/audio FX are the caller's.
+// Award a single gem's payout. Gems no longer grant score (spec C): blue tops up
+// the boost meter, red accrues toward the next heart. Shared by the collect path
+// and the wave-clear vacuum so both stay in lockstep. Returns the applyGem result
+// {kind, gained?/healed?/full?} so the caller can raise a kind-appropriate floater.
 function collectGem(gem) {
-  run.score += gem.value * multiplier(run);
   run.stats.gemsCollected += 1;
-  // Boost/heart payouts (applyGem) are wired in T7; the old dash-credit shave is
-  // gone with the dash system.
+  return applyGem(run, ship, gem.kind);
+}
+
+// Map an applyGem result to a pickup floater: blue → '+10%' cyan; red at full HP
+// (heart lost) → 'FULL'; any other red → '+10% ♥' red.
+function gemFloater(res) {
+  if (res.kind === 'blue') return { text: '+10%', kind: 'gem' };
+  if (res.full) return { text: 'FULL', kind: 'heart' };
+  return { text: '+10% ♥', kind: 'heart' };
 }
 
 function tickPlaying(snap, dt) {
@@ -188,11 +201,19 @@ function tickPlaying(snap, dt) {
   explosions = explosions.filter(ex => ex.t < ex.life);
   if (fx.pause > 0) return; // hit-pause freezes the world, not the fx
 
-  // Movement: W thrust toward the nose + continuous Space boost (full boost
-  // FX/trail wiring lands in T7). Plume points opposite the nose while thrusting.
+  // Movement: W thrust toward the nose + continuous Space boost. Plume points
+  // opposite the nose while thrusting; the boost afterimage/plume-scale keys off
+  // ship.boosting (true only while the meter is actually draining).
   updateShip(ship, snap, dt, arena);
-  thrusting = snap.thrust || ship.boosting;
+  boosting = ship.boosting;
+  thrusting = snap.thrust || boosting;
   if (thrusting) moveAngle = ship.angle;
+  if (boosting) {
+    run.stats.boostTime += dt;    // seconds spent boosting (game-over stat)
+    boostTrailT = 0.35;           // keep the afterimage fresh while boosting
+    if (!wasBoosting) sfxBoost();  // rising-edge blip on boost start only
+  }
+  wasBoosting = boosting;
 
   const shots = updateGun(ship, snap, dt, rng);
   if (shots.length > 0) {
@@ -202,6 +223,10 @@ function tickPlaying(snap, dt) {
   }
   bullets.push(...shots);
   bullets = updateBullets(bullets, dt, arena);
+
+  // Rockets: right-click launches one along the nose (fireRocket returns false
+  // while cooling down — only whoosh + count the launch when it actually fires).
+  if (snap.rocketPressed && fireRocket(rockets, ship)) sfxRocket();
 
   // spawn pipeline: schedule → telegraph → enemy
   waveT += dt;
@@ -219,7 +244,7 @@ function tickPlaying(snap, dt) {
   // markers ({spawn:'mini'}). Partition them — shots join the field, markers spawn
   // minis at the marker position with the current wave (they count toward clear).
   const out = [];
-  for (const e of enemies) updateEnemy(e, ship, dt, out);
+  for (const e of enemies) updateEnemy(e, ship, dt, out, arena, rng);
   for (const o of out) {
     if (o.spawn) enemies.push(spawnEnemy(o.spawn, o.x, o.y, run.wave));
     else enemyShots.push(o);
@@ -235,8 +260,7 @@ function tickPlaying(snap, dt) {
   enemyShots = enemyShots.filter(s => !s.dead);
   if (mode !== 'playing') return; // a shot may have ended the run
 
-  // Bullet ↔ enemy collisions carry crit rolls; each hit spawns a floater and
-  // feeds the dash recharge credit.
+  // Bullet ↔ enemy collisions carry crit rolls; each hit spawns a damage floater.
   const crit = { chance: CRIT.chance + ship.mods.critChance, mult: CRIT.mult + ship.mods.critMult };
   const hits = collideBullets(bullets, enemies, rng, crit);
   run.stats.shotsHit += hits.length;
@@ -247,6 +271,21 @@ function tickPlaying(snap, dt) {
   }
 
   bullets = bullets.filter(b => !b.dead);
+
+  // Rockets: fly, detonate on first contact / at range, deal AoE damage (enemy hp
+  // mutated in place). Each detonation → big glow burst + shake + per-hit damage
+  // floaters; hp<=0 victims fall through to the kill sweep below (score/gems as
+  // normal kills). shotsHit isn't credited to rockets (that stat tracks the gun).
+  const detonations = updateRockets(rockets, enemies, dt);
+  for (const det of detonations) {
+    burst(fx, det.x, det.y, '#ff9e3e', 26, rng, 300, true); // big additive glow
+    spawnExplosion(det.x, det.y, ROCKET.aoeRadius * 0.5);
+    addShake(fx, 10);
+    addPause(fx, 0.03);
+    sfxExplosion();
+    for (const h of det.hits) addFloater(floaters, h.enemy.x, h.enemy.y, String(h.damage), 'dmg');
+  }
+
   for (const e of enemies) {
     if (e.hp <= 0 && !e.dead) killEnemy(e);
   }
@@ -267,20 +306,23 @@ function tickPlaying(snap, dt) {
   }
   enemies = enemies.filter(e => !e.dead);
 
-  // Gems: move/magnetise/age; collect → score (×multiplier), stat, a shave off the
-  // active dash recharge, and a soft chime + tiny glow burst.
-  const collected = updateGems(gems, ship, dt);
+  // Gems: move/magnetise/age using the same effective magnet radius the force-
+  // field ring renders at (GEMS.magnetRadius × Attractor multiplier). Collect →
+  // applyGem payout (blue boost / red heart), stat, a soft chime + tiny glow
+  // burst, and a kind-appropriate floater at the pickup point.
+  const magnetR = GEMS.magnetRadius * (ship.mods.magnet || 1);
+  const collected = updateGems(gems, ship, dt, magnetR);
   for (const c of collected) {
-    collectGem(c);
-    burst(fx, c.x, c.y, '#5fe8ff', 8, rng, 150, true);
-    // The payout was invisible before — show it where it happened, floating
-    // clear of the ship sprite.
-    addFloater(floaters, c.x, c.y - ship.radius * 1.4, `+${c.value * multiplier(run)}`, 'gem');
+    const res = collectGem(c);
+    const fx2 = gemFloater(res);
+    burst(fx, c.x, c.y, res.kind === 'red' ? '#e0524a' : '#5fe8ff', 8, rng, 150, true);
+    addFloater(floaters, c.x, c.y - ship.radius * 1.4, fx2.text, fx2.kind);
   }
   if (collected.length > 0) sfxGem();
 
-  // Record the afterimage trail (last few ship poses) while the dash is fresh.
-  dashTrailT = Math.max(0, dashTrailT - dt);
+  // Boost afterimage: record the last few ship poses; boostTrailT counts down
+  // once boost ends so the trail fades out (kept pinned to 0.35 while boosting).
+  boostTrailT = Math.max(0, boostTrailT - dt);
   shipTrail.unshift({ x: ship.x, y: ship.y, angle: ship.angle });
   if (shipTrail.length > 4) shipTrail.length = 4;
 
@@ -288,8 +330,9 @@ function tickPlaying(snap, dt) {
     if (ship.shield.owned) ship.shield.up = true; // recharge between waves
     enemyShots = []; // wipe hostile fire on wave clear
     // Wave clear is immediate (no loot screen), so VACUUM every remaining field
-    // gem — full score/stat/dash payout each — rather than discarding it. This
-    // guarantees the boss's 6-gem ring (and any stragglers) always pays out.
+    // gem — full applyGem payout each (same as a hand-collect) — rather than
+    // discarding it. This guarantees the boss's gem ring (and any stragglers)
+    // always pays boost/hearts out.
     if (gems.list.length > 0) {
       for (const gem of gems.list) collectGem(gem);
       sfxGem(); // single chime, not one per gem
@@ -341,12 +384,12 @@ function handlePaintClick(snap) {
 // ------------------------------------------------------------- rendering ------
 const frameIndex = () => Math.floor(clock * 6) % 2; // 6fps 2-frame idle flip
 
-function drawFrame(spr, x, y, angle = 0) {
+function drawFrame(spr, x, y, angle = 0, scale = 1) {
   const img = Array.isArray(spr) ? spr[frameIndex()] : spr;
   g.save();
   g.translate(x, y);
   g.rotate(angle);
-  g.drawImage(img, -img.width / 2, -img.height / 2);
+  g.drawImage(img, -img.width * scale / 2, -img.height * scale / 2, img.width * scale, img.height * scale);
   g.restore();
 }
 
@@ -425,28 +468,32 @@ function render() {
     }
   }
   // Engine thruster behind the ship while thrusting: pack plume (animated) or the
-  // code-gen flame. Both trail rearward when rotated by ship.angle.
+  // code-gen flame. Both trail rearward when rotated by ship.angle. Boost scales
+  // the plume up ~50% and reaches further back.
   if (thrusting) {
-    g.shadowColor = '#ff9e3e';
+    g.shadowColor = boosting ? '#5fe8ff' : '#ff9e3e';
+    const scale = boosting ? 1.5 : 1;
     if (ASSETS.thrust.length) {
       const fr = ASSETS.thrust[Math.floor(clock * 14) % ASSETS.thrust.length];
-      const off = ship.radius * 1.2;
-      if (fr) drawScaled(fr, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2);
+      const off = ship.radius * 1.2 * scale;
+      if (fr) drawScaled(fr, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2 * scale);
     } else if (SPRITES.flame) {
-      const off = ship.radius * 0.8;
-      drawFrame(SPRITES.flame, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle);
+      const off = ship.radius * 0.8 * scale;
+      drawFrame(SPRITES.flame, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, scale);
     }
   }
   g.restore();
 
-  // Gems: soft cyan glow; blink (skip alternate frames) during the last 1.5s.
+  // Gems: kind-tinted glow (blue = boost, red = heart); drawn ~30% smaller than
+  // native (spec C); blink (skip alternate frames) during the last 1.5s.
   if (gems && gems.list.length && SPRITES.gem) {
     g.save();
     g.shadowBlur = 8;
-    g.shadowColor = '#5fe8ff';
     for (const gem of gems.list) {
       if (gemBlinking(gem) && Math.sin(clock * 18) < 0) continue;
-      drawFrame(SPRITES.gem, gem.x, gem.y);
+      const red = gem.kind === 'red';
+      g.shadowColor = red ? '#e0524a' : '#5fe8ff';
+      drawFrame(red ? (SPRITES.gemRed || SPRITES.gem) : SPRITES.gem, gem.x, gem.y, 0, 0.7);
     }
     g.restore();
   }
@@ -474,12 +521,42 @@ function render() {
     }
   }
 
-  // Dash afterimage: last 3 poses at falling alpha, only while the dash is fresh.
+  // Rockets: missile sprite pointed along travel, with a short additive glow
+  // trail streaming out the back.
+  if (rockets && rockets.list.length) {
+    g.save();
+    for (const rk of rockets.list) {
+      const ang = Math.atan2(rk.vy, rk.vx);
+      const cos = Math.cos(ang), sin = Math.sin(ang);
+      g.globalCompositeOperation = 'lighter';
+      for (let i = 1; i <= 3; i++) {
+        const t = i * rk.radius * 1.6;
+        g.globalAlpha = 0.4 - i * 0.1;
+        g.fillStyle = i === 1 ? '#ffd75e' : '#ff7a3e';
+        g.fillRect(rk.x - cos * t - 2, rk.y - sin * t - 2, 4, 4);
+      }
+      g.globalCompositeOperation = 'source-over';
+      g.globalAlpha = 1;
+      g.shadowBlur = 10;
+      g.shadowColor = '#ff9e3e';
+      if (SPRITES.rocket) drawScaled(SPRITES.rocket, rk.x, rk.y, ang, rk.radius * 5);
+      g.shadowBlur = 0;
+    }
+    g.restore();
+    g.globalAlpha = 1;
+  }
+
+  // Force-field ring at the effective gem-magnet radius (spec C), so the pull
+  // zone is visible. Same radius fed to updateGems.
+  drawFieldRing(g, ship, GEMS.magnetRadius * (ship.mods.magnet || 1), clock);
+
+  // Boost afterimage: last 3 poses at falling alpha while the boost trail is
+  // fresh (kept at 0.35 while boosting, then fades).
   const shipD = ship.radius * 2.5;
-  if (dashTrailT > 0) {
+  if (boostTrailT > 0) {
     for (let i = 1; i < Math.min(4, shipTrail.length); i++) {
       const p = shipTrail[i];
-      g.globalAlpha = (dashTrailT / 0.35) * (0.32 - (i - 1) * 0.09);
+      g.globalAlpha = (boostTrailT / 0.35) * (0.32 - (i - 1) * 0.09);
       drawScaled(SPRITES.ship, p.x, p.y, p.angle, shipD);
     }
     g.globalAlpha = 1;
@@ -498,7 +575,7 @@ function render() {
   }
 
   // Particles: plain-blend pass first, then additive 'lighter' only for the
-  // glow-tagged explosion/hit particles (muzzle/dash bursts stay non-glow).
+  // glow-tagged explosion/hit particles (muzzle/impact bursts stay non-glow).
   g.save();
   for (const p of fx.particles) {
     if (p.glow) continue;
@@ -532,7 +609,7 @@ function render() {
   renderFloaters();
   g.restore();
 
-  drawHud(g, arena.w, run, ship);
+  drawHud(g, arena.w, run, ship, rockets);
   const boss = enemies.find(e => e.type === 'boss');
   if (boss) drawBossBar(g, arena.w, boss); // only while a boss is alive
   if (mode === 'paused') drawPause(g, arena.w, arena.h);
@@ -558,6 +635,7 @@ function renderFloaters() {
     let size, color, weight = '';
     if (fl.kind === 'crit')      { size = 1.65 * u; color = '#ffd75e'; weight = 'bold '; }
     else if (fl.kind === 'gem')   { size = 1.25 * u; color = '#5fe8ff'; weight = 'bold '; }
+    else if (fl.kind === 'heart') { size = 1.25 * u; color = '#ff6b7a'; weight = 'bold '; }
     else if (fl.kind === 'combo') { size = 1.5 * u;  color = '#ff9e3e'; weight = 'bold '; }
     else if (fl.kind === 'info')  { size = 1.9 * u;  color = '#e8e6d8'; weight = 'bold '; }
     else                          { size = 1.1 * u;  color = '#ffffff'; }
@@ -584,18 +662,21 @@ function seedDevScreen(which) {
     floaters.list = []; // clean overlay for the dev screenshot
     mode = 'upgrade';
   } else if (which === 'boss') {
-    // Wave 5 mid-fight: boss at ~55% HP upper-center, escort drifters, gems on
-    // the field, HP bar visible.
-    run.wave = 5; run.score = 8600; run.streak = 4; powerLevel = 3;
+    // Wave 10 mid-fight: boss number B=2 (walls + B≥2 minis active), at ~55% HP
+    // (P2 phase → bullet wall) upper-center, escort drifters, blue+red gems on the
+    // field, HP bar visible. wallTimer primed so a wall sweeps almost immediately.
+    run.wave = 10; run.score = 18600; run.streak = 4; powerLevel = 6;
     pending = []; telegraphs = []; enemies = []; enemyShots = [];
-    const boss = spawnEnemy('boss', arena.w / 2, arena.h * 0.3, 5);
-    boss.hp = Math.round(boss.maxHp * 0.55);
+    const boss = spawnEnemy('boss', arena.w / 2, arena.h * 0.3, 10);
+    boss.hp = Math.round(boss.maxHp * 0.55); // P2 band [1/3, 2/3]
+    boss.wallTimer = 0.2; // fire a wall right away so it shows on the seed
     enemies.push(boss);
-    enemies.push(spawnEnemy('drifter', arena.w * 0.3, arena.h * 0.55, 5));
-    enemies.push(spawnEnemy('drifter', arena.w * 0.7, arena.h * 0.5, 5));
-    spawnGemRing(gems, arena.w / 2, arena.h * 0.52, 40, 6, rng);
-    spawnGem(gems, arena.w * 0.42, arena.h * 0.62, 30, rng);
-    spawnGem(gems, arena.w * 0.6, arena.h * 0.66, 30, rng);
+    enemies.push(spawnEnemy('drifter', arena.w * 0.3, arena.h * 0.55, 10));
+    enemies.push(spawnEnemy('drifter', arena.w * 0.7, arena.h * 0.5, 10));
+    spawnGemRing(gems, arena.w / 2, arena.h * 0.52, 40, 6, rng, 'blue');
+    spawnGemRing(gems, arena.w * 0.5, arena.h * 0.52, 40, 2, rng, 'red');
+    spawnGem(gems, arena.w * 0.42, arena.h * 0.62, 30, rng, 'red');
+    spawnGem(gems, arena.w * 0.6, arena.h * 0.66, 30, rng, 'blue');
     floaters.list = [];
     mode = 'playing';
   } else {

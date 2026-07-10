@@ -18,9 +18,6 @@ export function createShip(x, y) {
       critChance: 0, critMult: 0, magnet: 1, bounce: 0,
     },
     shield: { owned: false, up: false },
-    // Vestigial dash data — read by upgrades (T4) and the HUD (T6) until they
-    // are reworked to boost. No dash system logic remains on the ship.
-    dash: { charges: 2, max: 2, recharge: 0, stacks: 0 },
   };
 }
 
