@@ -10,6 +10,17 @@ import { ASSETS } from './assets.js';
 
 export const SPRITES = {};
 
+// v5.1 perf: pre-baked glow sprites. Every glowing primitive that used to get a
+// per-frame ctx.shadowBlur (a Gaussian blur per draw call) is instead rendered
+// ONCE here into a padded offscreen canvas WITH its glow; the frame loop then
+// does a plain drawImage. Rebuilt alongside SPRITES on each initSprites() call
+// (so it picks up pack art once ASSETS.ready). Each entry is
+// { frames: [canvas,…], nat } where nat is the ORIGINAL content's max dimension
+// (padding excluded) so callers scale by targetSize/nat and the halo rides along.
+export const GLOW = {};
+
+const HOSTILE = '#ff5b8a'; // enemy-shot color (mirrors main.js)
+
 // Player paint is now a family KEY. Each family maps to a representative hull
 // hex used ONLY for the code-gen fallback ship (sampled from the pack hulls).
 const FAMILY_HEX = {
@@ -564,6 +575,77 @@ function buildIcons() {
   };
 }
 
+// -------------------------------------------------------------- GLOW bakery --
+// Draw `src` (a transparent-background canvas) centred on a larger canvas with a
+// shadowBlur halo baked in. Padding = 2×blur so the halo isn't clipped.
+function bakeGlow(src, color, blur) {
+  const pad = Math.ceil(blur) * 2;
+  const c = document.createElement('canvas');
+  c.width = src.width + pad * 2;
+  c.height = src.height + pad * 2;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.shadowColor = color;
+  g.shadowBlur = blur;
+  g.drawImage(src, pad, pad);
+  return c;
+}
+
+// Build a GLOW entry from one canvas or a frame array. nat tracks the ORIGINAL
+// content's larger dimension so the frame loop can scale by targetSize/nat.
+function glowSprite(frames, color, blur) {
+  const arr = Array.isArray(frames) ? frames : [frames];
+  const nat = Math.max(arr[0].width, arr[0].height) || 1;
+  return { frames: arr.map(f => bakeGlow(f, color, blur)), nat };
+}
+
+// Tiny solid primitives for the code-gen fallbacks (used only when pack
+// projectile art is absent — the glow is baked the same way regardless).
+function solidSquare(side, color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = side;
+  const g = c.getContext('2d');
+  g.fillStyle = color;
+  g.fillRect(0, 0, side, side);
+  return c;
+}
+function solidDisc(diameter, color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = diameter;
+  const g = c.getContext('2d');
+  g.fillStyle = color;
+  g.beginPath();
+  g.arc(diameter / 2, diameter / 2, diameter / 2, 0, Math.PI * 2);
+  g.fill();
+  return c;
+}
+
+// Rebuild every pre-baked glow sprite. Sources prefer pack art (ASSETS) and
+// fall back to code-gen shapes so a slot always exists. Blur radii mirror the
+// old runtime shadowBlur values (bullets/shots 12, gems 8, rocket 10, thruster
+// 12) so the look matches the pre-bake render.
+function buildGlow() {
+  // Player bullets → warm gold. Pack projectile if present, else a small square.
+  GLOW.bullet = glowSprite(ASSETS.projectiles.player || solidSquare(4, '#ffd75e'), '#ffd75e', 12);
+  // Hostile shots → pink. Boss bolt is the bulkier variant (falls back to enemy).
+  GLOW.enemyShot = glowSprite(ASSETS.projectiles.enemy || solidDisc(12, HOSTILE), HOSTILE, 12);
+  GLOW.bossShot = glowSprite(ASSETS.projectiles.boss || ASSETS.projectiles.enemy || solidDisc(12, HOSTILE), HOSTILE, 12);
+  // Gems: kind-tinted glow (blue = boost, red = heart).
+  GLOW.gemBlue = glowSprite(SPRITES.gem, '#5fe8ff', 8);
+  GLOW.gemRed = glowSprite(SPRITES.gemRed || SPRITES.gem, '#e0524a', 8);
+  // Rocket missile body glow (the additive trail stays a plain rect loop).
+  GLOW.rocket = glowSprite(SPRITES.rocket, '#ff9e3e', 10);
+  // Thruster plume: warm while thrusting, cyan while boosting. Prefer the
+  // animated pack plume frames; else the code-gen flame frames.
+  const thrustFrames = (ASSETS.thrust || []).filter(Boolean);
+  const flame = SPRITES.flame;
+  GLOW.thrustNormal = glowSprite(thrustFrames.length ? thrustFrames : flame, '#ff9e3e', 12);
+  GLOW.thrustBoost = glowSprite(thrustFrames.length ? thrustFrames : flame, '#5fe8ff', 12);
+  // Whether the plume set is pack art (diameter-scaled) or code-gen flame
+  // (scale-factor), so main can pick the right frame cadence + sizing.
+  GLOW.thrustIsPack = thrustFrames.length > 0;
+}
+
 // ------------------------------------------------------------ initSprites ----
 // `paint` is a family key ('metalic'|'red'|'blue'|'purple'|'orange'|'greyblue').
 export function initSprites(paint = 'metalic') {
@@ -617,4 +699,7 @@ export function initSprites(paint = 'metalic') {
     if (missile.length >= 2) SPRITES.rocket = missile;
     else if (missile.length === 1) SPRITES.rocket = packFrames(missile[0]);
   }
+
+  // Pre-bake glow sprites LAST, from the now-final SPRITES + ASSETS art.
+  buildGlow();
 }

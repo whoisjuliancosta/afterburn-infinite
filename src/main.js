@@ -11,7 +11,7 @@ import { createRockets, fireRocket, updateRockets } from './rockets.js';
 import { loadBoard, recordRun, saveBoard, placed } from './board.js';
 import { rollOffers, applyUpgrade } from './upgrades.js';
 import { createFloaters, addFloater, updateFloaters } from './floaters.js';
-import { initSprites, SPRITES } from './sprites.js';
+import { initSprites, SPRITES, GLOW } from './sprites.js';
 import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
@@ -76,8 +76,6 @@ let wasBoosting = false;// prior-frame boost state, for the boost-start sfx edge
 let shipTrail = [];     // recent {x, y, angle} for the boost afterimage
 let boostTrailT = 0;    // afterimage lifetime countdown (kept fresh while boosting)
 let rocketPending = false; // latched right-click; survives hit-pause frames until the fire check consumes it
-
-const HOSTILE = '#ff5b8a'; // enemy-shot color
 
 function startRun() {
   run = createRun();
@@ -257,6 +255,8 @@ function tickPlaying(snap, dt) {
     if (o.spawn) enemies.push(spawnEnemy(o.spawn, o.x, o.y, run.wave));
     else enemyShots.push(o);
   }
+  // Hard cap (v5.1 perf): bound hostile shots on screen, culling the oldest.
+  if (enemyShots.length > 220) enemyShots.splice(0, enemyShots.length - 220);
 
   // Enemy shots: fly straight, cull off-arena, collide with the ship.
   for (const s of enemyShots) {
@@ -398,15 +398,6 @@ function handlePaintClick(snap) {
 // ------------------------------------------------------------- rendering ------
 const frameIndex = () => Math.floor(clock * 6) % 2; // 6fps 2-frame idle flip
 
-function drawFrame(spr, x, y, angle = 0, scale = 1) {
-  const img = Array.isArray(spr) ? spr[frameIndex()] : spr;
-  g.save();
-  g.translate(x, y);
-  g.rotate(angle);
-  g.drawImage(img, -img.width * scale / 2, -img.height * scale / 2, img.width * scale, img.height * scale);
-  g.restore();
-}
-
 // Draw a sprite (canvas or 2-frame array) centred at x,y, rotated, scaled so its
 // larger dimension = `diameter` (aspect preserved, nearest-neighbor). Used for
 // ships/enemies/projectiles so pack art and code-gen fallback share one sizing
@@ -421,6 +412,27 @@ function drawScaled(spr, x, y, angle, diameter) {
   g.rotate(angle);
   g.drawImage(img, -w / 2, -h / 2, w, h);
   g.restore();
+}
+
+// Draw a pre-baked glow sprite (from sprites.js GLOW). `size` is the desired
+// on-screen extent of the ORIGINAL content's larger dimension; the baked halo
+// scales along with it. `angle` 0 skips the save/rotate entirely (symmetric
+// sprites — bullets/shots/gems — so a whole batch runs with no per-entity ctx
+// state). `fi` overrides the frame index for plumes with their own cadence.
+function drawGlow(glow, x, y, angle, size, fi) {
+  const n = glow.frames.length;
+  const fr = glow.frames[(fi != null ? fi : (n > 1 ? frameIndex() : 0)) % n];
+  const k = size / glow.nat;
+  const w = fr.width * k, h = fr.height * k;
+  if (angle) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(angle);
+    g.drawImage(fr, -w / 2, -h / 2, w, h);
+    g.restore();
+  } else {
+    g.drawImage(fr, x - w / 2, y - h / 2, w, h);
+  }
 }
 
 function render() {
@@ -451,65 +463,41 @@ function render() {
     g.strokeRect(tg.x - 10, tg.y - 10, 20, 20);
   }
 
-  // --- Glow pass: bullets + enemy shots + thruster (shadowBlur), then reset ---
-  g.save();
-  g.shadowBlur = 12;
-  // Player bullets → animated projectile sprite (rotated to travel dir), else square.
-  g.shadowColor = '#ffd75e';
-  const playerProj = ASSETS.projectiles.player;
-  if (playerProj) {
-    for (const b of bullets) drawScaled(playerProj, b.x, b.y, Math.atan2(b.vy, b.vx), b.radius * 6);
-  } else {
-    g.fillStyle = '#ffd75e';
-    for (const b of bullets) g.fillRect(b.x - b.radius / 2, b.y - b.radius / 2, b.radius, b.radius);
-  }
-  // Hostile shots → pink projectile sprite; boss shots (bigger radius) use the
-  // boss bolt if present. Falls back to the filled circle.
-  g.shadowColor = HOSTILE;
-  const enemyProj = ASSETS.projectiles.enemy;
-  const bossProj = ASSETS.projectiles.boss || enemyProj;
-  if (enemyProj) {
-    for (const s of enemyShots) {
-      const spr = s.radius >= 6 ? bossProj : enemyProj;
-      drawScaled(spr, s.x, s.y, Math.atan2(s.vy, s.vx), s.radius * 5);
-    }
-  } else {
-    g.fillStyle = HOSTILE;
-    for (const s of enemyShots) {
-      g.beginPath();
-      g.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-      g.fill();
-    }
+  // --- Pre-baked glow passes (v5.1 perf): bullets, enemy shots, thruster. All
+  // glow is baked into the sprites (GLOW), so the frame loop is plain drawImage
+  // with zero shadowBlur. Bullets/shots are symmetric → drawn WITHOUT rotation
+  // and WITHOUT per-entity save/restore, one batch each.
+  for (const b of bullets) drawGlow(GLOW.bullet, b.x, b.y, 0, b.radius * 6);
+  for (const s of enemyShots) {
+    drawGlow(s.radius >= 6 ? GLOW.bossShot : GLOW.enemyShot, s.x, s.y, 0, s.radius * 5);
   }
   // Engine thruster behind the ship while thrusting: pack plume (animated) or the
   // code-gen flame. Both trail rearward when rotated by ship.angle. Boost scales
-  // the plume up ~50% and reaches further back.
+  // the plume up ~50% and reaches further back. Colour (warm/cyan) is a separate
+  // pre-baked set, not a runtime shadowColor.
   if (thrusting) {
-    g.shadowColor = boosting ? '#5fe8ff' : '#ff9e3e';
     const scale = boosting ? 1.5 : 1;
-    if (ASSETS.thrust.length) {
-      const fr = ASSETS.thrust[Math.floor(clock * 14) % ASSETS.thrust.length];
+    const plume = boosting ? GLOW.thrustBoost : GLOW.thrustNormal;
+    if (GLOW.thrustIsPack) {
       const off = ship.radius * 1.2 * scale;
-      if (fr) drawScaled(fr, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2 * scale);
-    } else if (SPRITES.flame) {
+      const fi = Math.floor(clock * 14);
+      drawGlow(plume, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2 * scale, fi);
+    } else {
+      // Code-gen flame: drawFrame semantics were native×scale, so size = nat×scale.
       const off = ship.radius * 0.8 * scale;
-      drawFrame(SPRITES.flame, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, scale);
+      drawGlow(plume, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, plume.nat * scale);
     }
   }
-  g.restore();
 
   // Gems: kind-tinted glow (blue = boost, red = heart); drawn ~30% smaller than
-  // native (spec C); blink (skip alternate frames) during the last 1.5s.
-  if (gems && gems.list.length && SPRITES.gem) {
-    g.save();
-    g.shadowBlur = 8;
+  // native (spec C); blink (skip alternate frames) during the last 1.5s. Glow is
+  // pre-baked; symmetric so no rotation. One batch, no per-gem ctx state.
+  if (gems && gems.list.length) {
+    const gemSize = GLOW.gemBlue.nat * 0.7; // matches the old drawFrame(…, 0.7)
     for (const gem of gems.list) {
       if (gemBlinking(gem) && Math.sin(clock * 18) < 0) continue;
-      const red = gem.kind === 'red';
-      g.shadowColor = red ? '#e0524a' : '#5fe8ff';
-      drawFrame(red ? (SPRITES.gemRed || SPRITES.gem) : SPRITES.gem, gem.x, gem.y, 0, 0.7);
+      drawGlow(gem.kind === 'red' ? GLOW.gemRed : GLOW.gemBlue, gem.x, gem.y, 0, gemSize);
     }
-    g.restore();
   }
 
   for (const e of enemies) {
@@ -536,25 +524,26 @@ function render() {
   }
 
   // Rockets: missile sprite pointed along travel, with a short additive glow
-  // trail streaming out the back.
+  // trail streaming out the back. Composite toggles once (→ 'lighter' for all
+  // trails, → 'source-over' for all missiles), not per rocket; missile glow is
+  // pre-baked (GLOW.rocket) so no runtime shadowBlur.
   if (rockets && rockets.list.length) {
     g.save();
+    g.globalCompositeOperation = 'lighter';
     for (const rk of rockets.list) {
       const ang = Math.atan2(rk.vy, rk.vx);
       const cos = Math.cos(ang), sin = Math.sin(ang);
-      g.globalCompositeOperation = 'lighter';
       for (let i = 1; i <= 3; i++) {
         const t = i * rk.radius * 1.6;
         g.globalAlpha = 0.4 - i * 0.1;
         g.fillStyle = i === 1 ? '#ffd75e' : '#ff7a3e';
         g.fillRect(rk.x - cos * t - 2, rk.y - sin * t - 2, 4, 4);
       }
-      g.globalCompositeOperation = 'source-over';
-      g.globalAlpha = 1;
-      g.shadowBlur = 10;
-      g.shadowColor = '#ff9e3e';
-      if (SPRITES.rocket) drawScaled(SPRITES.rocket, rk.x, rk.y, ang, rk.radius * 5);
-      g.shadowBlur = 0;
+    }
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    for (const rk of rockets.list) {
+      drawGlow(GLOW.rocket, rk.x, rk.y, Math.atan2(rk.vy, rk.vx), rk.radius * 5);
     }
     g.restore();
     g.globalAlpha = 1;
