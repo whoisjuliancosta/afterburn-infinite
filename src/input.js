@@ -9,7 +9,7 @@ export function createInput(canvas) {
     mouseY = e.offsetY;
   });
 
-  let pausePending = false;
+  let pausePending = false, rocketPending = false;
 
   window.addEventListener('keydown', e => {
     // edge-triggered pause: Esc or P, latch only on the first press
@@ -21,6 +21,9 @@ export function createInput(canvas) {
   window.addEventListener('blur', () => down.clear());
 
   canvas.addEventListener('mousedown', e => {
+    // Right button (2): edge-triggered rocket launch. Context menu is already
+    // suppressed below; don't touch left-button/held state.
+    if (e.button === 2) { rocketPending = true; return; }
     if (e.button !== 0) return;
     taps += 1;
     held = true;
@@ -43,10 +46,12 @@ export function createInput(canvas) {
         key1: down.has('Digit1'), key2: down.has('Digit2'), key3: down.has('Digit3'),
         keyR: down.has('KeyR'),
         pausePressed: pausePending,
+        rocketPressed: rocketPending,
       };
       taps = 0;
       clicked = false;
       pausePending = false;
+      rocketPending = false;
       return snap;
     },
   };
