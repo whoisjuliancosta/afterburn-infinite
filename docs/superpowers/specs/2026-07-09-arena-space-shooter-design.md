@@ -29,6 +29,7 @@ A browser-based 360° arena space shooter that rewards pilot skill. Enemies swar
 
 - Fire direction is always the ship's nose. The mouse is a trigger only — it does not aim.
 - The tap-vs-hold split is a core skill mechanic: spray (hold) when swarmed, precision-tap when it counts.
+- Semi-auto has a minimum cooldown of ~80% of the full-auto interval, and that cooldown scales down with fire-rate upgrades — tapping always retains its slight edge but can never trivialize Rapid Fire.
 
 ## Movement
 
@@ -55,7 +56,7 @@ Single fixed screen sized to the browser window (no scrolling, no camera). Soft-
 ## Waves & Difficulty
 
 - Each wave has a difficulty budget spent on enemy costs (see table above).
-- Budget grows each wave; enemy speed and HP scale gently with wave number.
+- Starting values (tunable during playtesting): budget = 3 + 2×(wave − 1); enemy speed and HP each scale ~+4%/wave.
 - Spawns trickle in across the wave duration rather than all at once.
 - Wave 1–2 near-tutorial; ~wave 10 is chaos. No fixed end — runs last as long as skill allows.
 
