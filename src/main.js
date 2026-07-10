@@ -14,7 +14,7 @@ import { initSprites, SPRITES } from './sprites.js';
 import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
-import { initAudio, sfxShot, sfxDash, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
+import { initAudio, sfxShot, sfxBoost, sfxRocket, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
 import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause } from './hud.js';
 import { createInput } from './input.js';
 

@@ -36,7 +36,19 @@ function noise(dur, vol = 0.2) {
 }
 
 export function sfxShot()      { blip(880, 0.07, 'square', 0.05, 220); }
-export function sfxDash()       { blip(300, 0.16, 'square', 0.11, 760); } // short rising blip
+// Boost start: a soft rising whoosh — a low sine sweeping up under a short airy
+// noise wash. Quiet so it can fire on every boost tap without fatiguing.
+export function sfxBoost() {
+  blip(180, 0.30, 'sine', 0.07, 540);
+  noise(0.22, 0.06);
+}
+// Rocket launch: a deep whoosh-boom — a longer noise body over a low sawtooth
+// sweeping down, punchier than an explosion.
+export function sfxRocket() {
+  noise(0.35, 0.18);
+  blip(160, 0.34, 'sawtooth', 0.16, 46);
+  setTimeout(() => blip(90, 0.26, 'sawtooth', 0.14, 30), 60);
+}
 export function sfxExplosion() { noise(0.25, 0.25); blip(140, 0.2, 'sawtooth', 0.1, 40); }
 export function sfxHit()       { noise(0.35, 0.3); blip(90, 0.35, 'sawtooth', 0.18, 30); }
 export function sfxChime()     { blip(523, 0.12, 'triangle', 0.15); setTimeout(() => blip(784, 0.2, 'triangle', 0.15), 90); }
