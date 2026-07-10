@@ -1,7 +1,7 @@
 // test/waves.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { waveBudget, buildWave, scheduleWave, spawnIntervalFor } from '../src/waves.js';
+import { waveBudget, buildWave, scheduleWave, spawnIntervalFor, isBossWave } from '../src/waves.js';
 import { ENEMIES, WAVE } from '../src/config.js';
 import { makeRng } from '../src/utils.js';
 
@@ -15,13 +15,54 @@ test('budget follows round(4 + 2.5*(wave-1) + 1.5*power)', () => {
   assert.equal(waveBudget(3, 2), 12);    // 4 + 5 + 3 = 12
 });
 
-test('buildWave spends the exact budget on buyable types', () => {
+test('buildWave spends the exact budget on buyable types (non-boss waves)', () => {
   for (let wave = 1; wave <= 12; wave++) {
+    if (isBossWave(wave)) continue;
     for (const power of [0, 3, 7]) {
       const types = buildWave(wave, makeRng(wave * 100 + power), power);
       const spent = types.reduce((sum, t) => sum + ENEMIES[t].cost, 0);
       assert.equal(spent, waveBudget(wave, power));
       assert.ok(types.every(t => BUYABLE.includes(t)));
+    }
+  }
+});
+
+// --- Boss waves ---
+
+test('isBossWave is true only every 5th wave', () => {
+  for (let w = 1; w <= 30; w++) assert.equal(isBossWave(w), w % 5 === 0);
+});
+
+test('boss waves lead with the boss then an escort spending ~40% of the budget', () => {
+  for (const wave of [5, 10, 15, 20]) {
+    for (const power of [0, 3, 7]) {
+      const types = buildWave(wave, makeRng(wave * 13 + power), power);
+      assert.equal(types[0], 'boss', 'boss leads the wave');
+      const escort = types.slice(1);
+      // escort is a normal purchase at round(0.4 * budget)
+      const spent = escort.reduce((sum, t) => sum + ENEMIES[t].cost, 0);
+      assert.equal(spent, Math.round(0.4 * waveBudget(wave, power)));
+      assert.ok(escort.every(t => BUYABLE.includes(t)), 'escort is buyable types only');
+      assert.ok(!escort.includes('boss'), 'no boss in the escort');
+    }
+  }
+});
+
+test('boss escort respects unlock gating', () => {
+  // Wave 5 escort: weaver (unlock 7) must never appear.
+  for (let seed = 0; seed < 60; seed++) {
+    const escort = buildWave(5, makeRng(seed), 6).slice(1);
+    assert.ok(escort.every(t => ENEMIES[t].unlock <= 5), 'escort gated by unlock');
+    assert.ok(!escort.includes('weaver'), 'weaver locked at wave 5');
+  }
+});
+
+test('boss never appears on normal waves (cost-0 excluded from buyable)', () => {
+  for (let wave = 1; wave <= 24; wave++) {
+    if (isBossWave(wave)) continue;
+    for (let seed = 0; seed < 30; seed++) {
+      const types = buildWave(wave, makeRng(seed), 6);
+      assert.ok(!types.includes('boss'), `no boss on normal wave ${wave}`);
     }
   }
 });

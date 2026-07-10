@@ -19,17 +19,31 @@ export function spawnIntervalFor(wave) {
   );
 }
 
-export function buildWave(wave, rng, power = 0) {
-  let budget = waveBudget(wave, power);
-  const unlocked = BUYABLE.filter(t => ENEMIES[t].unlock <= wave);
+export function isBossWave(wave) {
+  return wave % 5 === 0;
+}
+
+// Random budget purchase of unlock-gated buyable types. Cost-0 types are excluded
+// explicitly so a free unit (e.g. the boss) can never enter and spin the loop.
+function purchase(budget, wave, rng) {
+  const unlocked = BUYABLE.filter(t => ENEMIES[t].unlock <= wave && ENEMIES[t].cost > 0);
   const types = [];
   while (budget > 0) {
     const affordable = unlocked.filter(t => ENEMIES[t].cost <= budget);
+    if (affordable.length === 0) break;
     const type = affordable[Math.floor(rng() * affordable.length)];
     types.push(type);
     budget -= ENEMIES[type].cost;
   }
   return types;
+}
+
+export function buildWave(wave, rng, power = 0) {
+  if (isBossWave(wave)) {
+    const escort = purchase(Math.round(0.4 * waveBudget(wave, power)), wave, rng);
+    return ['boss', ...escort];
+  }
+  return purchase(waveBudget(wave, power), wave, rng);
 }
 
 export function scheduleWave(types, rng, arena, wave = 1) {
