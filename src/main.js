@@ -1,7 +1,7 @@
 // src/main.js
 import { WAVE, CRIT, GEMS } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
-import { createShip, updateShip, updateGun, tryDash, creditDash, moveDir } from './ship.js';
+import { createShip, updateShip, updateGun } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
 import { spawnEnemy, updateEnemy, deathSpawns } from './enemies.js';
 import { buildWave, scheduleWave } from './waves.js';
@@ -186,19 +186,11 @@ function tickPlaying(snap, dt) {
   explosions = explosions.filter(ex => ex.t < ex.life);
   if (fx.pause > 0) return; // hit-pause freezes the world, not the fx
 
-  // Dash: edge-triggered impulse + iframes, with burst, SFX and afterimage.
-  const md = moveDir(ship, snap);
-  if (snap.dashPressed && tryDash(ship, md ? md.x : 0, md ? md.y : 0)) {
-    run.stats.dashes += 1;
-    sfxDash();
-    burst(fx, ship.x - Math.cos(ship.angle) * ship.radius,
-              ship.y - Math.sin(ship.angle) * ship.radius, '#3ecfe6', 14, rng, 240);
-    dashTrailT = 0.35;
-  }
-
+  // Movement: W thrust toward the nose + continuous Space boost (full boost
+  // FX/trail wiring lands in T7). Plume points opposite the nose while thrusting.
   updateShip(ship, snap, dt, arena);
-  thrusting = !!md;
-  if (md) moveAngle = Math.atan2(md.y, md.x);
+  thrusting = snap.thrust || ship.boosting;
+  if (thrusting) moveAngle = ship.angle;
 
   const shots = updateGun(ship, snap, dt, rng);
   if (shots.length > 0) {
@@ -251,7 +243,6 @@ function tickPlaying(snap, dt) {
     dealt += h.dealt;
     addFloater(floaters, h.x, h.y, String(h.dealt), h.crit ? 'crit' : 'dmg');
   }
-  if (dealt > 0) creditDash(ship, dealt);
 
   bullets = bullets.filter(b => !b.dead);
   for (const e of enemies) {

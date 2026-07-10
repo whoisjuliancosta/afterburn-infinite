@@ -3,8 +3,10 @@
 // Imports `multiplier` from run.js (the only logic module it may touch) and
 // SPRITES from the browser sprites module.
 import { multiplier } from './run.js';
-import { DASH } from './config.js';
 import { SPRITES } from './sprites.js';
+
+// Vestigial dash-pip recharge window; the boost bar replaces this in T6.
+const DASH_RECHARGE = 6;
 
 const FONT = 'monospace';
 const INK = '#e8e6d8';
@@ -123,7 +125,7 @@ export function drawHud(g, w, run, ship) {
       const pstep = pipS + pgap;
       const py = margin + heartH + gap;
       const charges = ship.dash.charges;
-      const progress = Math.min(1, Math.max(0, 1 - ship.dash.recharge / DASH.rechargeTime));
+      const progress = Math.min(1, Math.max(0, 1 - ship.dash.recharge / DASH_RECHARGE));
       for (let i = 0; i < ship.dash.max; i++) {
         const x = rightX - (ship.dash.max - i) * pstep;
         let fill;

@@ -1,4 +1,4 @@
-export const DASH = { impulse: 560, charges: 2, rechargeTime: 6, damageCredit: 0.35, iframes: 0.25, speedCapMult: 1.8 };
+export const BOOST = { drainPerSec: 0.40, thrustMult: 2.4, speedMult: 1.9, baseUnits: 1, maxUnits: 3 };
 
 export const CRIT = { chance: 0.10, mult: 2 };
 
