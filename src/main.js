@@ -1,5 +1,5 @@
 // src/main.js
-import { WAVE, CRIT, GEMS, ROCKET } from './config.js';
+import { WAVE, CRIT, GEMS, ROCKET, GUN } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
 import { createShip, updateShip, updateGun } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
@@ -76,6 +76,7 @@ let wasBoosting = false;// prior-frame boost state, for the boost-start sfx edge
 let shipTrail = [];     // recent {x, y, angle} for the boost afterimage
 let boostTrailT = 0;    // afterimage lifetime countdown (kept fresh while boosting)
 let rocketPending = false; // latched right-click; survives hit-pause frames until the fire check consumes it
+let stressMode = false;    // ?screen=stress: worst-case perf scene, sustained each frame (dev/measurement only)
 
 function startRun() {
   run = createRun();
@@ -653,6 +654,35 @@ function renderFloaters() {
 // ---------------------------------------------------------- dev screenshot ----
 // ?screen=upgrade / ?screen=gameover jump straight to that state with fake data
 // so headless screenshots can cover those screens. No param → normal boot.
+// ?screen=stress sustain (dev/measurement only, gated by stressMode). Re-tops the
+// worst-case scene every playing frame so the render load stays saturated across
+// the whole sample window, while the real sim keeps everything moving/firing.
+const STRESS_ENEMY_TYPES = ['drifter', 'darter', 'spitter', 'orbiter', 'weaver', 'splitter'];
+function stressBullet() {
+  const a = rng() * Math.PI * 2;
+  const sp = GUN.bulletSpeed * ship.mods.bulletSpeed;
+  return {
+    x: rng() * arena.w, y: rng() * arena.h,
+    vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+    damage: GUN.damage + ship.mods.damage, pierce: ship.mods.pierce, bounces: ship.mods.bounce,
+    traveled: 0, range: GUN.bulletRange * ship.mods.bulletSpeed, radius: GUN.bulletRadius, dead: false,
+  };
+}
+function stressShot() {
+  const a = rng() * Math.PI * 2;
+  return { x: rng() * arena.w, y: rng() * arena.h, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, radius: 6, dead: false };
+}
+function stressSustain() {
+  ship.hp = ship.maxHp; ship.iframes = 0.2; // invulnerable (no death) and non-blinking (visible)
+  let boss = enemies.find(e => e.type === 'boss');
+  if (!boss) { boss = spawnEnemy('boss', arena.w / 2, arena.h * 0.28, 20); enemies.push(boss); }
+  boss.hp = Math.max(1, Math.floor(boss.maxHp * 0.32)); // pin to P3 (<1/3 maxHp): spirals + minis + blinks
+  while (enemies.length < 40) enemies.push(spawnEnemy(STRESS_ENEMY_TYPES[Math.floor(rng() * STRESS_ENEMY_TYPES.length)], rng() * arena.w, rng() * arena.h, 20));
+  while (bullets.length < 200) bullets.push(stressBullet());
+  while (enemyShots.length < 150) enemyShots.push(stressShot());
+  if (fx.particles.length < 300) burst(fx, arena.w / 2, arena.h / 2, '#ff9e3e', 300 - fx.particles.length, rng, 260, true);
+}
+
 function seedDevScreen(which) {
   startRun();
   if (which === 'upgrade') {
@@ -682,6 +712,27 @@ function seedDevScreen(which) {
     spawnGem(gems, arena.w * 0.6, arena.h * 0.66, 30, rng, 'blue');
     floaters.list = [];
     mode = 'playing';
+  } else if (which === 'stress') {
+    // Worst-case render scene for the T-verify perf measurement (spec A.5). A
+    // capped-build player, ~40 enemies incl. a P3 boss (spirals + minis + walls),
+    // ~150 enemy shots, ~200 bullets and 300 particles — all in real 'playing'
+    // mode so the full sim runs every frame. stressSustain() re-tops the scene
+    // each frame so the worst case holds for the whole 10s sample (not a static
+    // tableau: every entity moves, the boss fires, kills spawn gems/explosions).
+    run.wave = 20; run.score = 92000; run.streak = 20; powerLevel = 20;
+    // Capped build: caps clamp inside applyUpgrade, so over-applying is safe.
+    for (const id of ['rapid', 'rapid', 'rapid', 'rapid', 'rapid', 'rapid', 'spread',
+      'spread', 'spread', 'pierce', 'pierce', 'pierce', 'pierce', 'pierce', 'ricochet',
+      'ricochet', 'ricochet', 'velocity', 'velocity', 'velocity', 'heavy', 'heavy',
+      'bigpayload', 'bigpayload', 'fastreload', 'fastreload', 'lucky', 'lucky',
+      'rearguard', 'adrenaline', 'aegis', 'boosttank', 'boosttank', 'attractor', 'attractor']) {
+      applyUpgrade(ship, id);
+    }
+    pending = []; telegraphs = []; enemies = []; enemyShots = []; bullets = [];
+    stressMode = true;
+    stressSustain();          // seed the population; frame() re-tops it each tick
+    floaters.list = [];
+    mode = 'playing';
   } else {
     run.score = 12450; run.wave = 9;
     // Seed a board so the game-over leaderboard + placed highlight render.
@@ -708,6 +759,7 @@ function frame(t) {
     if (!handlePaintClick(snap)) { initAudio(); startRun(); }
   }
   else if (mode === 'playing') {
+    if (stressMode) stressSustain(); // re-saturate the worst-case scene before the tick
     // Latch a right-click before anything can early-return; tickPlaying consumes it
     // (may be a hit-pause frame that returns before the fire check).
     if (snap.rocketPressed) rocketPending = true;
@@ -738,7 +790,7 @@ function frame(t) {
 const devScreen = new URLSearchParams(location.search).get('screen');
 loadAssets().then(() => {
   initSprites(paint); // rebind SPRITES to pack art now that ASSETS.ready is true
-  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss') seedDevScreen(devScreen);
+  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss' || devScreen === 'stress') seedDevScreen(devScreen);
   else mode = 'menu';
 });
 requestAnimationFrame(frame);
