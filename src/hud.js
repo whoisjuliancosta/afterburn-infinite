@@ -608,6 +608,21 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
       g.fillText(`${i + 1}.  ${e.score}  ·  wave ${e.wave}`, w / 2, h * 0.60 + i * Math.round(1.6 * u));
     });
   }
+  // LEGEND / paytable button (below the leaderboard, above the ship picker).
+  const lr = legendRect(w, h);
+  g.fillStyle = '#16141f';
+  roundRect(g, lr.x, lr.y, lr.w, lr.h, Math.round(u * 0.4));
+  g.fill();
+  g.strokeStyle = ACCENT;
+  g.lineWidth = 1.5;
+  roundRect(g, lr.x, lr.y, lr.w, lr.h, Math.round(u * 0.4));
+  g.stroke();
+  g.fillStyle = ACCENT;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `${Math.round(1.1 * u)}px ${FONT}`;
+  g.fillText('LEGEND  (L)', w / 2, lr.y + lr.h / 2);
+
   drawPicker(g, w, h, paint);
   // Start prompt sits BELOW the swatch row: the ~3× ship preview above the
   // swatches occupies the old h*0.72 band and would strike the text through.
@@ -617,6 +632,229 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText('— click to start —', w / 2, swatch.y + swatch.h + Math.round(u * 1.8));
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+}
+
+// --------------------------------------------------------------- LEGEND -------
+// The LEGEND button on the menu (paytable entry). Single source of geometry for
+// drawing and click hit-testing, like paintRects. Sits under the leaderboard.
+export function legendRect(w, h) {
+  const u = Math.max(12, Math.round(w / 90));
+  const bw = Math.round(u * 9);
+  const bh = Math.round(u * 2.2);
+  return { x: Math.round(w / 2 - bw / 2), y: Math.round(h * 0.685), w: bw, h: bh };
+}
+
+// A sprite (canvas or 2-frame array → frame 0) drawn to fit a box, aspect
+// preserved, nearest-neighbor, centered on (cx, cy). No-op when art is missing.
+function drawSpriteFit(g, spr, cx, cy, box) {
+  const img = Array.isArray(spr) ? spr[0] : spr;
+  if (!img || !img.width) return;
+  const nat = Math.max(img.width, img.height) || 1;
+  const s = box / nat;
+  const iw = img.width * s, ih = img.height * s;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(img, Math.round(cx - iw / 2), Math.round(cy - ih / 2), iw, ih);
+}
+
+// Centered multi-color single line. `segs` = [{text, color}]; drawn left-to-right
+// centered on cx at baseline-middle. Caller sets the font.
+function drawSegments(g, segs, cx, y) {
+  const total = segs.reduce((s, seg) => s + g.measureText(seg.text).width, 0);
+  let x = cx - total / 2;
+  const prevAlign = g.textAlign;
+  g.textAlign = 'left';
+  for (const seg of segs) {
+    g.fillStyle = seg.color;
+    g.fillText(seg.text, x, y);
+    x += g.measureText(seg.text).width;
+  }
+  g.textAlign = prevAlign;
+}
+
+// Legend / paytable screen (spec v5.2 T5): grid of enemy cards, a wide boss card,
+// a pickups strip. Static draws only (no per-frame baking) — menu-family cost,
+// nothing added to the play loop. Sizes to fit 1280×800 without scroll; scales
+// with the actual viewport via the `u` unit. Sprites via SPRITES (code fallbacks).
+export function drawLegend(g, w, h, rows, boss, pickups) {
+  const u = Math.max(12, Math.round(w / 90));
+  // Dark panel over the starfield (already drawn by main), like the upgrade screen.
+  g.fillStyle = 'rgba(11, 11, 18, 0.9)';
+  g.fillRect(0, 0, w, h);
+
+  // Header (display font) + subtitle.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = ACCENT;
+  g.font = `${Math.round(2.4 * u)}px ${TITLE_FONT}`;
+  g.fillText('PAYTABLE', w / 2, Math.round(h * 0.06));
+  g.fillStyle = DIM;
+  g.font = `${Math.round(1.0 * u)}px ${FONT}`;
+  g.fillText('all contact & enemy shots deal 1 ♥ · PAYS = gem/score value', w / 2, Math.round(h * 0.11));
+
+  // ---- Enemy card grid --------------------------------------------------------
+  const cols = 4;
+  const gridTop = Math.round(h * 0.145);
+  const gridBottom = Math.round(h * 0.55);
+  const gridLeft = Math.round(w * 0.05);
+  const gridRight = Math.round(w * 0.95);
+  const gridW = gridRight - gridLeft;
+  const gap = Math.round(u * 0.9);
+  const cardW = (gridW - gap * (cols - 1)) / cols;
+  const gridRows = Math.ceil(rows.length / cols);
+  const cardH = (gridBottom - gridTop - gap * (gridRows - 1)) / gridRows;
+
+  rows.forEach((r, i) => {
+    const col = i % cols, rowI = Math.floor(i / cols);
+    const x = gridLeft + col * (cardW + gap);
+    const y = gridTop + rowI * (cardH + gap);
+    drawEnemyCard(g, r, x, y, cardW, cardH, u);
+  });
+
+  // ---- Wide boss card ---------------------------------------------------------
+  const bx = gridLeft;
+  const bw = gridW;
+  const by = Math.round(h * 0.57);
+  const bh = Math.round(h * 0.215);
+  drawBossCard(g, boss, bx, by, bw, bh, u);
+
+  // ---- Pickups strip ----------------------------------------------------------
+  const py = Math.round(h * 0.80);
+  const ph = Math.round(h * 0.11);
+  drawPickupsStrip(g, pickups, gridLeft, py, gridW, ph, u);
+
+  // Footer hint.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = DIM;
+  g.font = `${Math.round(1.0 * u)}px ${FONT}`;
+  g.fillText('L · Esc · click to return', w / 2, Math.round(h * 0.955));
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+}
+
+function drawEnemyCard(g, r, x, y, cw, ch, u) {
+  g.fillStyle = '#16141f';
+  roundRect(g, x, y, cw, ch, Math.round(u * 0.4));
+  g.fill();
+  g.strokeStyle = '#2a2836';
+  g.lineWidth = 1;
+  roundRect(g, x, y, cw, ch, Math.round(u * 0.4));
+  g.stroke();
+
+  const cx = x + cw / 2;
+  // Sprite in the top band.
+  const spriteBox = Math.min(cw * 0.42, ch * 0.34);
+  drawSpriteFit(g, SPRITES[r.type], cx, y + ch * 0.24, spriteBox);
+
+  // PAYS badge (top-right, ACCENT — the payout of the slot).
+  g.textBaseline = 'top';
+  g.textAlign = 'right';
+  g.fillStyle = ACCENT;
+  g.font = `bold ${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillText(`PAYS ${r.score}`, x + cw - u * 0.5, y + u * 0.5);
+
+  // Name.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = INK;
+  g.font = `bold ${Math.round(1.15 * u)}px ${FONT}`;
+  g.fillText(r.name, cx, y + ch * 0.5);
+
+  // Blurb (wrapped).
+  g.fillStyle = DIM;
+  g.font = `${Math.round(0.9 * u)}px ${FONT}`;
+  const blurbLines = wrapText(g, r.blurb, cw - u * 1.2);
+  const blurbY = y + ch * 0.62;
+  blurbLines.forEach((ln, k) => g.fillText(ln, cx, blurbY + k * Math.round(1.1 * u)));
+
+  // Stat line: HP · SPD · DMG · WAVE (or mini note). PAYS lives in the badge above.
+  const statY = y + ch - u * 0.9;
+  g.font = `${Math.round(0.85 * u)}px ${FONT}`;
+  const spawn = r.unlock !== undefined ? `WAVE ${r.unlock}+` : 'MINION';
+  drawSegments(g, [
+    { text: `HP ${r.hp}`, color: DIM },
+    { text: '  ·  ', color: '#3a3846' },
+    { text: `SPD ${r.speed}`, color: DIM },
+    { text: '  ·  ', color: '#3a3846' },
+    { text: `DMG ${r.dmg}♥`, color: '#ff6b7a' },
+    { text: '  ·  ', color: '#3a3846' },
+    { text: spawn, color: DIM },
+  ], x + cw / 2, statY);
+}
+
+function drawBossCard(g, boss, x, y, w, h, u) {
+  g.fillStyle = '#1a0f16';
+  roundRect(g, x, y, w, h, Math.round(u * 0.5));
+  g.fill();
+  g.strokeStyle = ACCENT;
+  g.lineWidth = 2;
+  roundRect(g, x, y, w, h, Math.round(u * 0.5));
+  g.stroke();
+
+  // Sprite on the left.
+  const box = Math.min(h * 0.7, w * 0.12);
+  const sprCx = x + u * 1.2 + box / 2;
+  drawSpriteFit(g, SPRITES.boss, sprCx, y + h / 2, box);
+
+  const tx = x + u * 2.4 + box; // text column right of the sprite
+
+  // Title row.
+  g.textBaseline = 'top';
+  g.textAlign = 'left';
+  g.fillStyle = '#e6743e';
+  g.font = `${Math.round(1.6 * u)}px ${TITLE_FONT}`;
+  g.fillText('BOSS', tx, y + u * 0.7);
+  g.fillStyle = DIM;
+  g.font = `${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillText(boss.cadence, tx, y + u * 2.5);
+
+  // Phase blurbs.
+  g.font = `${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillStyle = INK;
+  boss.phases.forEach((p, i) => {
+    g.fillText(p, tx, y + u * (3.9 + i * 1.25));
+  });
+
+  // Drop + HP/DMG line beneath the phases.
+  g.fillStyle = DIM;
+  g.fillText(`${boss.drop}   ·   HP ${boss.hp} · DMG ${boss.dmg}♥`, tx, y + u * (3.9 + boss.phases.length * 1.25 + 0.2));
+
+  // PAYS badge (top-right, ACCENT).
+  g.textAlign = 'right';
+  g.fillStyle = ACCENT;
+  g.font = `bold ${Math.round(1.5 * u)}px ${FONT}`;
+  g.fillText(`PAYS ${boss.score}`, x + w - u * 1.0, y + u * 0.9);
+  g.textAlign = 'left';
+}
+
+function drawPickupsStrip(g, pickups, x, y, w, h, u) {
+  const half = (w - u) / 2;
+  pickups.forEach((p, i) => {
+    const px = x + i * (half + u);
+    g.fillStyle = '#12121c';
+    roundRect(g, px, y, half, h, Math.round(u * 0.4));
+    g.fill();
+    g.strokeStyle = p.kind === 'red' ? 'rgba(224,54,47,0.5)' : 'rgba(95,232,255,0.5)';
+    g.lineWidth = 1;
+    roundRect(g, px, y, half, h, Math.round(u * 0.4));
+    g.stroke();
+
+    const spr = p.kind === 'red' ? SPRITES.gemRed : SPRITES.gem;
+    const box = Math.min(h * 0.6, u * 2.2);
+    drawSpriteFit(g, spr, px + u * 1.4, y + h / 2, box);
+
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    const textX = px + u * 3.0;
+    g.fillStyle = p.kind === 'red' ? '#ff6b7a' : '#5fe8ff';
+    g.font = `bold ${Math.round(1.1 * u)}px ${FONT}`;
+    g.fillText(p.name, textX, y + h * 0.34);
+    g.fillStyle = INK;
+    g.font = `${Math.round(0.92 * u)}px ${FONT}`;
+    g.fillText(p.effect, textX, y + h * 0.66);
+  });
   g.textAlign = 'left';
   g.textBaseline = 'top';
 }
