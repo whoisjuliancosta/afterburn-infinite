@@ -9,13 +9,23 @@ export function createInput(canvas) {
     mouseY = e.offsetY;
   });
 
-  let pausePending = false, rocketPending = false, legendPending = false;
+  let pausePending = false, rocketPending = false, legendPending = false, enterPending = false, escPending = false;
+  let typed = []; // printable chars + 'Backspace' captured this frame (name field)
 
   window.addEventListener('keydown', e => {
     // edge-triggered pause: Esc or P, latch only on the first press
     if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) pausePending = true;
+    // edge-triggered Escape only — used to blur the focused name field without
+    // consuming 'P' (which is a printable char that must append to the name).
+    if (e.code === 'Escape' && !e.repeat) escPending = true;
     // edge-triggered legend toggle: L, latch on first press (held L can't strobe)
     if (e.code === 'KeyL' && !e.repeat) legendPending = true;
+    // edge-triggered Enter (menu start / name-field blur)
+    if (e.code === 'Enter' && !e.repeat) enterPending = true;
+    // Text capture for the pilot-name field: single printable chars (letters,
+    // digits, space, dash all have key.length === 1) plus Backspace. The consumer
+    // (main.js) only reads this while the field is focused and filters characters.
+    if (e.key === 'Backspace' || (e.key && e.key.length === 1)) typed.push(e.key);
     down.add(e.code);
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   });
@@ -43,6 +53,8 @@ export function createInput(canvas) {
       const snap = {
         thrust: down.has('KeyW') || down.has('ArrowUp'),
         reverse: down.has('KeyS') || down.has('ArrowDown'),
+        strafeLeft: down.has('KeyA') || down.has('ArrowLeft'),   // lateral strafe, mirrors thrust/reverse
+        strafeRight: down.has('KeyD') || down.has('ArrowRight'),
         boosting: down.has('ShiftLeft') || down.has('ShiftRight'), // continuous while Shift is held
         held, taps, clicked, clickX, clickY,
         aimX: mouseX, aimY: mouseY,
@@ -51,12 +63,18 @@ export function createInput(canvas) {
         pausePressed: pausePending,
         rocketPressed: rocketPending,
         legendPressed: legendPending,
+        enterPressed: enterPending,
+        escPressed: escPending,
+        typed,
       };
       taps = 0;
       clicked = false;
       pausePending = false;
       rocketPending = false;
       legendPending = false;
+      enterPending = false;
+      escPending = false;
+      typed = []; // snap.typed keeps the old array reference
       return snap;
     },
   };

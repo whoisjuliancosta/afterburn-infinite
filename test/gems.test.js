@@ -1,7 +1,7 @@
 // test/gems.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GEMS } from '../src/config.js';
+import { GEMS, SHIP, BOOST } from '../src/config.js';
 import { makeRng } from '../src/utils.js';
 import {
   createGems, spawnGem, spawnGemRing, updateGems, gemBlinking, BLINK_TIME, rollDrop,
@@ -260,6 +260,89 @@ test('rollDrop: red chance clamps at 0.2 (including isBig doubling)', () => {
   assert.equal(rollDrop(() => 0.6, false, luck), 'red');
   assert.equal(rollDrop(() => 0.8 - 1e-9, false, luck), 'red');
   assert.equal(rollDrop(() => 0.8, false, luck), null);
+});
+
+// --- v5.3 magnet lock: a gem inside the field is a guaranteed, no-escape catch ---
+
+test('a gem inside the magnet field never expires (age frozen once locked)', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 190, 0, 10, makeRng(1)); // inside the 200 field
+  gem.vx = 0; gem.vy = 0;
+  gem.age = GEMS.lifetime - 0.01; // on the brink of expiry
+  const ship = { x: 0, y: 0, vx: 0, vy: 0, radius: 18 };
+  updateGems(g, ship, 0.1); // would push age past lifetime under the old rules
+  assert.equal(g.list.length, 1);                    // not culled
+  assert.ok(g.list[0].locked);                       // locked
+  assert.equal(g.list[0].age, GEMS.lifetime - 0.01); // age frozen, not incremented
+});
+
+test('a locked gem survives many seconds of dt without expiring', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 150, 0, 10, makeRng(1));
+  gem.vx = 0; gem.vy = 0;
+  const ship = { x: 0, y: 0, vx: 0, vy: 0, radius: 18 };
+  for (let i = 0; i < 200; i++) { // 20 s — far past the 6 s lifetime
+    updateGems(g, ship, 0.1);
+    assert.equal(g.list.length, 1);   // never culled by expiry
+    ship.x = g.list[0].x + 100;       // keep the ship 100px ahead: in-field, uncollected
+  }
+  assert.equal(g.list[0].age, 0); // age stayed frozen the whole time
+});
+
+test('a locked gem strictly closes on a ship fleeing at boost speed', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 0, 0, 10, makeRng(1));
+  gem.vx = 0; gem.vy = 0;
+  const boostSpeed = SHIP.maxSpeed * BOOST.speedMult; // max fleeing speed
+  const ship = { x: 60, y: 0, vx: boostSpeed, vy: 0, radius: 18 };
+  const dt = 1 / 60;
+  let prev = Infinity, sawLocked = false;
+  for (let i = 0; i < 240; i++) {
+    ship.x += ship.vx * dt; // ship flees before the gem update, so ship.vx is honest
+    updateGems(g, ship, dt);
+    if (g.list.length === 0) break; // closed all the way and was collected → success
+    const d = Math.hypot(ship.x - g.list[0].x, ship.y - g.list[0].y);
+    if (g.list[0].locked) {
+      if (sawLocked) assert.ok(d < prev - 1e-9, `distance must strictly decrease: ${d} vs ${prev}`);
+      sawLocked = true;
+      prev = d;
+    }
+  }
+  assert.ok(sawLocked);
+});
+
+test('a gem outside the magnet field ages normally and is never locked', () => {
+  const g = createGems();
+  spawnGem(g, 500, 0, 10, makeRng(1));
+  const ship = { x: 0, y: 0, vx: 0, vy: 0, radius: 18 };
+  updateGems(g, ship, 0.1);
+  assert.ok(!g.list[0].locked);
+  assert.ok(Math.abs(g.list[0].age - 0.1) < 1e-9);
+});
+
+test('lock is sticky — stays locked (age frozen) after the ship dashes out of range', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 100, 0, 10, makeRng(1));
+  gem.vx = 0; gem.vy = 0;
+  const ship = { x: 0, y: 0, vx: 0, vy: 0, radius: 18 };
+  updateGems(g, ship, 0.05); // locks (d = 100 < 200)
+  assert.ok(g.list[0].locked);
+  const ageBefore = g.list[0].age;
+  ship.x = 5000; // dash far outside the magnet radius
+  updateGems(g, ship, 0.2);
+  assert.ok(g.list[0].locked);            // still locked
+  assert.equal(g.list[0].age, ageBefore); // still frozen
+  assert.ok(g.list[0].vx > 0);            // still steering toward the (far) ship
+});
+
+test('a locked gem is still collected on overlap', () => {
+  const g = createGems();
+  spawnGem(g, 5, 0, 250, makeRng(1)); // inside ship radius + gem radius, so in-field
+  const ship = { x: 0, y: 0, vx: 0, vy: 0, radius: 18 };
+  const collected = updateGems(g, ship, 0.016);
+  assert.equal(collected.length, 1);
+  assert.equal(collected[0].value, 250);
+  assert.equal(g.list.length, 0);
 });
 
 test('gemBlinking is true only during the last BLINK_TIME seconds of life', () => {

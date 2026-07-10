@@ -41,6 +41,22 @@ function roundRect(g, x, y, w, h, r) {
   g.closePath();
 }
 
+// A pill button (fill = accent-filled/prominent, else outline). Centered label.
+function drawButton(g, r, label, u, fill) {
+  g.fillStyle = fill ? ACCENT : '#16141f';
+  roundRect(g, r.x, r.y, r.w, r.h, Math.round(u * 0.4));
+  g.fill();
+  g.strokeStyle = ACCENT;
+  g.lineWidth = fill ? 2 : 1.5;
+  roundRect(g, r.x, r.y, r.w, r.h, Math.round(u * 0.4));
+  g.stroke();
+  g.fillStyle = fill ? '#0b0b12' : ACCENT;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `bold ${Math.round(1.1 * u)}px ${FONT}`;
+  g.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
+}
+
 function dot(g, color, x, y, r) {
   g.fillStyle = color;
   g.beginPath();
@@ -571,7 +587,7 @@ function drawMenuShips(g, w, h, t) {
 }
 
 // ------------------------------------------------------------------ MENU ------
-export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
+export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0, name = '', nameFocused = false) {
   const u = Math.max(12, Math.round(w / 90));
   const bake = ensureMenuBake(w, h);
 
@@ -594,58 +610,95 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
   g.textBaseline = 'middle';
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('W thrust · S reverse · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
-  g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
-  if (best > 0) {
-    g.fillStyle = ACCENT;
-    g.fillText(`BEST ${best}`, w / 2, h * 0.55);
+  g.fillText('W thrust · S reverse · A/D strafe · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.375);
+  g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.415);
+
+  // PILOT NAME field (above BEST). Focused = accent border + blinking caret; the
+  // blink is driven off the shared clock `t` (no Date). Placeholder PILOT (dim)
+  // when empty & unfocused.
+  const nr = nameRect(w, h);
+  g.textAlign = 'center';
+  g.textBaseline = 'bottom';
+  g.font = `${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillStyle = DIM;
+  g.fillText('PILOT NAME', w / 2, nr.y - Math.round(u * 0.3));
+  g.fillStyle = '#12121c';
+  roundRect(g, nr.x, nr.y, nr.w, nr.h, Math.round(u * 0.3));
+  g.fill();
+  g.strokeStyle = nameFocused ? ACCENT : '#3a3846';
+  g.lineWidth = nameFocused ? 2 : 1;
+  roundRect(g, nr.x, nr.y, nr.w, nr.h, Math.round(u * 0.3));
+  g.stroke();
+  g.textBaseline = 'middle';
+  g.font = `bold ${Math.round(1.1 * u)}px ${FONT}`;
+  const cy = nr.y + nr.h / 2;
+  if (nameFocused) {
+    g.fillStyle = INK;
+    const caret = (t % 1) < 0.5 ? '|' : '';
+    g.fillText(name + caret, w / 2, cy);
+  } else {
+    g.fillStyle = name ? INK : DIM;
+    g.fillText(name || 'PILOT', w / 2, cy);
   }
-  // Top-3 leaderboard, small, under best.
+
+  if (best > 0) {
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `16px ${FONT}`;
+    g.fillStyle = ACCENT;
+    g.fillText(`BEST ${best}`, w / 2, h * 0.53);
+  }
+  // Top-3 leaderboard, small, under best. Names (legacy entries → PILOT).
   if (board && board.length) {
     g.font = `${Math.round(1.05 * u)}px ${FONT}`;
     g.fillStyle = DIM;
     board.slice(0, 3).forEach((e, i) => {
-      g.fillText(`${i + 1}.  ${e.score}  ·  wave ${e.wave}`, w / 2, h * 0.60 + i * Math.round(1.6 * u));
+      const nm = e.name || 'PILOT';
+      g.fillText(`${i + 1}.  ${nm}  ·  ${e.score}  ·  wave ${e.wave}`, w / 2, h * 0.575 + i * Math.round(1.5 * u));
     });
   }
-  // LEGEND / paytable button (below the leaderboard, above the ship picker).
-  const lr = legendRect(w, h);
-  g.fillStyle = '#16141f';
-  roundRect(g, lr.x, lr.y, lr.w, lr.h, Math.round(u * 0.4));
-  g.fill();
-  g.strokeStyle = ACCENT;
-  g.lineWidth = 1.5;
-  roundRect(g, lr.x, lr.y, lr.w, lr.h, Math.round(u * 0.4));
-  g.stroke();
-  g.fillStyle = ACCENT;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = `${Math.round(1.1 * u)}px ${FONT}`;
-  g.fillText('LEGEND  (L)', w / 2, lr.y + lr.h / 2);
 
   drawPicker(g, w, h, paint);
-  // Start prompt sits BELOW the swatch row: the ~3× ship preview above the
-  // swatches occupies the old h*0.72 band and would strike the text through.
-  const swatch = paintRects(w, h)[0];
-  g.fillStyle = INK;
-  g.font = `16px ${FONT}`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText('— click to start —', w / 2, swatch.y + swatch.h + Math.round(u * 1.8));
+
+  // START (accent-filled, prominent) + LEGEND (outline) buttons below the swatch
+  // row. Enter also starts; L also opens the legend. No click-anywhere start.
+  drawButton(g, startRect(w, h), 'START', u, true);
+  drawButton(g, legendRect(w, h), 'LEGEND (L)', u, false);
   g.textAlign = 'left';
   g.textBaseline = 'top';
 }
 
 // --------------------------------------------------------------- LEGEND -------
-// The LEGEND button on the menu (paytable entry). Single source of geometry for
-// drawing and click hit-testing, like paintRects. Sits below the '— click to
-// start —' prompt (h*0.685 put it behind the picker's 3× ship preview).
+// Single source of geometry for the menu name field + the START/LEGEND button
+// pair (drawing + click hit-testing, like paintRects). START and LEGEND sit
+// side-by-side below the swatch row; the name field sits above BEST.
+
+// PILOT NAME input box (click to focus, type A–Z/0–9/space/dash).
+export function nameRect(w, h) {
+  const u = Math.max(12, Math.round(w / 90));
+  const bw = Math.round(u * 11);
+  const bh = Math.round(u * 2.0);
+  return { x: Math.round(w / 2 - bw / 2), y: Math.round(h * 0.47), w: bw, h: bh };
+}
+
+// START button — left of the pair, accent-filled/prominent.
+export function startRect(w, h) {
+  const u = Math.max(12, Math.round(w / 90));
+  const swatchH = Math.max(36, Math.round(u * 2.6)); // keep in sync with paintRects
+  const bw = Math.round(u * 8);
+  const bh = Math.round(u * 2.6);
+  const gap = Math.round(u * 1.2);
+  const y = Math.round(h * 0.8 + swatchH + u * 1.4);
+  const x0 = Math.round(w / 2 - (bw * 2 + gap) / 2);
+  return { x: x0, y, w: bw, h: bh };
+}
+
+// LEGEND button — right of START (opens the legend / paytable), outline style.
 export function legendRect(w, h) {
   const u = Math.max(12, Math.round(w / 90));
-  const bw = Math.round(u * 9);
-  const bh = Math.round(u * 2.2);
-  const swatchH = Math.max(36, Math.round(u * 2.6)); // keep in sync with paintRects
-  return { x: Math.round(w / 2 - bw / 2), y: Math.round(h * 0.8 + swatchH + u * 3.4), w: bw, h: bh };
+  const s = startRect(w, h);
+  const gap = Math.round(u * 1.2);
+  return { x: s.x + s.w + gap, y: s.y, w: s.w, h: s.h };
 }
 
 // A sprite (canvas or 2-frame array → frame 0) drawn to fit a box, aspect
@@ -690,7 +743,7 @@ export function drawLegend(g, w, h, rows, boss, pickups) {
   g.textBaseline = 'middle';
   g.fillStyle = ACCENT;
   g.font = `${Math.round(2.4 * u)}px ${TITLE_FONT}`;
-  g.fillText('PAYTABLE', w / 2, Math.round(h * 0.06));
+  g.fillText('LEGEND', w / 2, Math.round(h * 0.06));
   g.fillStyle = DIM;
   g.font = `${Math.round(1.0 * u)}px ${FONT}`;
   g.fillText('all contact & enemy shots deal 1 ♥ · PAYS = gem/score value', w / 2, Math.round(h * 0.11));
@@ -930,12 +983,13 @@ export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], 
     board.slice(0, 5).forEach((e, i) => {
       const y = rowY(i);
       const hot = i === placedIdx;
+      const nm = e.name || 'PILOT'; // legacy no-name entries render as PILOT
       g.textAlign = 'left';
       g.fillStyle = hot ? ACCENT : (i === 0 ? INK : DIM);
-      g.fillText(`${i + 1}.  ${e.score}`, rightX, y);
+      g.fillText(`${i + 1}. ${nm}`, rightX, y);
       g.textAlign = 'right';
       g.fillStyle = hot ? ACCENT : DIM;
-      g.fillText(`wave ${e.wave}`, rightX + colW, y);
+      g.fillText(`${e.score}`, rightX + colW, y);
     });
   }
 

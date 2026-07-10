@@ -16,7 +16,7 @@ import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
 import { initAudio, sfxShot, sfxBoost, sfxRocket, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
-import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing, setTitleFontReady, drawLegend, legendRect } from './hud.js';
+import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing, setTitleFontReady, drawLegend, legendRect, startRect, nameRect } from './hud.js';
 import { legendRows, bossRow, pickupRows } from './legend.js';
 import { createInput } from './input.js';
 
@@ -53,6 +53,27 @@ function loadPaint() {
 }
 let paint = loadPaint();
 initSprites(paint); // code-gen fallback now; rebound to pack art once assets load
+
+// Pilot name for the leaderboard (persisted, uppercased, ≤12). main.js is the
+// composition root → owns localStorage. Focus state lives here too; while the
+// menu name field is focused, keyboard shortcuts are suppressed.
+const NAME_KEY = 'np-shooter-name';
+function loadName() {
+  try { return (localStorage.getItem(NAME_KEY) || '').toUpperCase().slice(0, 12); }
+  catch { return ''; }
+}
+function saveName() {
+  try { localStorage.setItem(NAME_KEY, pilotName); } catch { /* private mode */ }
+}
+let pilotName = loadName();
+let nameFocused = false;
+// Append/delete a captured key into the pilot name (A–Z/0–9/space/dash, ≤12).
+function typeName(ch) {
+  if (ch === 'Backspace') { pilotName = pilotName.slice(0, -1); return; }
+  if (pilotName.length >= 12) return;
+  const up = ch.toUpperCase();
+  if (/^[A-Z0-9 -]$/.test(up)) pilotName += up;
+}
 
 const input = createInput(canvas);
 const rng = makeRng(Date.now());
@@ -169,7 +190,7 @@ function damagePlayer() {
     enemyShots = []; // clear hostile fire on death
     if (run.score > best) { best = run.score; saveBest(best); }
     // Record on the local leaderboard (main is the composition root → owns the clock).
-    const entry = { score: run.score, wave: run.wave, date: new Date().toISOString().slice(0, 10) };
+    const entry = { score: run.score, wave: run.wave, date: new Date().toISOString().slice(0, 10), name: pilotName };
     board = recordRun(board, entry);
     saveBoard(board);
     placedIdx = placed(board, entry);
@@ -398,12 +419,15 @@ function handlePaintClick(snap) {
   return false;
 }
 
-// True when a menu click landed on the LEGEND button (opens the paytable).
-function hitLegendButton(snap) {
-  const r = legendRect(arena.w, arena.h);
+// Point-in-rect helper for a click snapshot against a hud rect.
+function hitRect(snap, r) {
   return snap.clickX >= r.x && snap.clickX <= r.x + r.w &&
          snap.clickY >= r.y && snap.clickY <= r.y + r.h;
 }
+// True when a menu click landed on the LEGEND button (opens the legend).
+function hitLegendButton(snap) { return hitRect(snap, legendRect(arena.w, arena.h)); }
+function hitStartButton(snap) { return hitRect(snap, startRect(arena.w, arena.h)); }
+function hitNameField(snap) { return hitRect(snap, nameRect(arena.w, arena.h)); }
 
 // ------------------------------------------------------------- rendering ------
 const frameIndex = () => Math.floor(clock * 6) % 2; // 6fps 2-frame idle flip
@@ -461,7 +485,7 @@ function render() {
     return;
   }
 
-  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board, clock); return; }
+  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board, clock, pilotName, nameFocused); return; }
   if (mode === 'legend') { drawLegend(g, arena.w, arena.h, legendRows(), bossRow(), pickupRows()); return; }
 
   g.save();
@@ -504,7 +528,9 @@ function render() {
   // native (spec C); blink (skip alternate frames) during the last 1.5s. Glow is
   // pre-baked; symmetric so no rotation. One batch, no per-gem ctx state.
   if (gems && gems.list.length) {
-    const gemSize = GLOW.gemBlue.nat * 0.7; // matches the old drawFrame(…, 0.7)
+    // Draw size derived from GEMS.radius (one knob): identical to the old
+    // 0.7×native at the legacy radius 5, shrinks as the config radius drops.
+    const gemSize = GLOW.gemBlue.nat * 0.14 * GEMS.radius;
     for (const gem of gems.list) {
       if (gemBlinking(gem) && Math.sin(clock * 18) < 0) continue;
       drawGlow(gem.kind === 'red' ? GLOW.gemRed : GLOW.gemBlue, gem.x, gem.y, 0, gemSize);
@@ -769,12 +795,32 @@ function frame(t) {
   updateStarfield(starfield, dt);
   const snap = input.poll();
 
-  if (mode === 'menu' && snap.legendPressed) {
-    mode = 'legend'; // L opens the paytable
-  }
-  else if (mode === 'menu' && snap.clicked) {
-    if (hitLegendButton(snap)) mode = 'legend';
-    else if (!handlePaintClick(snap)) { initAudio(); startRun(); }
+  if (mode === 'menu') {
+    // Click routing: focus the name field, else blur it and hit buttons/swatches.
+    // Click-anywhere-to-start is removed — only the START button (or Enter) starts.
+    if (snap.clicked) {
+      if (hitNameField(snap)) {
+        nameFocused = true;
+      } else {
+        if (nameFocused) { nameFocused = false; saveName(); }
+        if (hitStartButton(snap)) { initAudio(); startRun(); }
+        else if (hitLegendButton(snap)) mode = 'legend';
+        else handlePaintClick(snap);
+      }
+    }
+    // Keyboard: a focused name field swallows every shortcut (L can't open the
+    // legend, Enter blurs instead of starting).
+    if (mode === 'menu') {
+      if (nameFocused) {
+        for (const ch of snap.typed) typeName(ch);
+        // Blur on Enter or Esc only — not P (a printable char that must append).
+        if (snap.enterPressed || snap.escPressed) { nameFocused = false; saveName(); }
+      } else if (snap.legendPressed) {
+        mode = 'legend'; // L opens the legend
+      } else if (snap.enterPressed) {
+        initAudio(); startRun(); // Enter starts
+      }
+    }
   }
   else if (mode === 'legend') {
     // L / Esc / P / click anywhere returns to the menu.

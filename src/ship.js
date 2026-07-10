@@ -51,6 +51,17 @@ export function updateShip(ship, input, dt, arena) {
     ship.vy -= sin * a * SHIP.reverseMult * dt;
   }
 
+  // A / D strafe laterally, perpendicular to the nose (left = nose − 90°, right =
+  // nose + 90°) at SHIP.strafeMult of forward thrust. Shares `a`, so Engine
+  // upgrades and adrenaline apply; boost (below) does NOT scale it. Both held →
+  // strafeDir 0 → cancel. Right perpendicular of the nose = (−sin, cos).
+  const strafeDir = (input.strafeRight ? 1 : 0) - (input.strafeLeft ? 1 : 0);
+  if (strafeDir !== 0) {
+    const sa = a * SHIP.strafeMult * strafeDir * dt;
+    ship.vx += -sin * sa;
+    ship.vy += cos * sa;
+  }
+
   // Continuous boost: while Space is held and the meter has charge, drain it,
   // add extra thrust toward the nose (independent of W) and lift the speed cap
   // for this frame. ship.boosting is true only while actually draining.
