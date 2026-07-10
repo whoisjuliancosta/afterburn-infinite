@@ -14,6 +14,7 @@ test('createShip has spec defaults', () => {
   assert.deepEqual(s.mods, {
     fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
     critChance: 0, critMult: 0, magnet: 1, bounce: 0,
+    rocketAoe: 1, rocketReload: 1, boostDrain: 1, luck: 1, rear: 0, adrenaline: 0,
   });
   assert.deepEqual(s.shield, { owned: false, up: false });
   assert.deepEqual(s.boost, { meter: 1, units: BOOST.baseUnits, stacks: 0 });

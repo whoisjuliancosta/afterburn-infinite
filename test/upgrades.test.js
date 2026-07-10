@@ -6,12 +6,14 @@ import { createShip } from '../src/ship.js';
 import { makeRng } from '../src/utils.js';
 import { CAPS, BOOST } from '../src/config.js';
 
-test('pool has the 15 spec upgrades (extradash/recovery reworked away)', () => {
+test('pool has the 21 spec upgrades (v5.1 adds six)', () => {
   const ids = UPGRADES.map(u => u.id).sort();
   assert.deepEqual(ids, [
-    'aegis', 'attractor', 'boosttank', 'deadeye', 'engine', 'executioner', 'heavy',
-    'hull', 'overclock', 'pierce', 'rapid', 'ricochet', 'secondwind', 'spread', 'velocity',
+    'adrenaline', 'aegis', 'attractor', 'bigpayload', 'boosttank', 'burners', 'deadeye',
+    'engine', 'executioner', 'fastreload', 'heavy', 'hull', 'lucky', 'overclock', 'pierce',
+    'rapid', 'rearguard', 'ricochet', 'secondwind', 'spread', 'velocity',
   ]);
+  assert.equal(new Set(ids).size, 21);
 });
 
 test('legacy ids extradash/recovery are gone from the pool', () => {
@@ -238,4 +240,99 @@ test('rapid can never push fireRate past cap via applyUpgrade clamp', () => {
   s.mods.fireRate = CAPS.fireRate - 0.01;
   applyUpgrade(s, 'rapid'); // 1.25x would overshoot
   assert.equal(s.mods.fireRate, CAPS.fireRate);
+});
+
+// --- v5.1: six new upgrades ---
+
+test('createShip seeds neutral v5.1 mod defaults', () => {
+  const s = createShip(0, 0);
+  assert.equal(s.mods.rocketAoe, 1);
+  assert.equal(s.mods.rocketReload, 1);
+  assert.equal(s.mods.boostDrain, 1);
+  assert.equal(s.mods.luck, 1);
+  assert.equal(s.mods.rear, 0);
+  assert.equal(s.mods.adrenaline, 0);
+});
+
+test('bigpayload multiplies rocket AoE ×1.4 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'bigpayload');
+  assert.ok(Math.abs(s.mods.rocketAoe - 1.4) < 1e-9);
+  applyUpgrade(s, 'bigpayload');
+  assert.ok(Math.abs(s.mods.rocketAoe - 1.4 * 1.4) < 1e-9);
+});
+
+test('fastreload multiplies rocket reload ×0.75 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'fastreload');
+  assert.ok(Math.abs(s.mods.rocketReload - 0.75) < 1e-9);
+  applyUpgrade(s, 'fastreload');
+  assert.ok(Math.abs(s.mods.rocketReload - 0.75 * 0.75) < 1e-9);
+});
+
+test('burners multiplies boost drain ×0.75 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'burners');
+  assert.ok(Math.abs(s.mods.boostDrain - 0.75) < 1e-9);
+  applyUpgrade(s, 'burners');
+  assert.ok(Math.abs(s.mods.boostDrain - 0.75 * 0.75) < 1e-9);
+});
+
+test('lucky multiplies gem-drop luck ×1.3 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'lucky');
+  assert.ok(Math.abs(s.mods.luck - 1.3) < 1e-9);
+  applyUpgrade(s, 'lucky');
+  assert.ok(Math.abs(s.mods.luck - 1.3 * 1.3) < 1e-9);
+});
+
+test('rearguard sets the rear flag (single stack, idempotent)', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'rearguard');
+  assert.equal(s.mods.rear, 1);
+  applyUpgrade(s, 'rearguard');
+  assert.equal(s.mods.rear, 1);
+});
+
+test('adrenaline sets the adrenaline flag (single stack, idempotent)', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'adrenaline');
+  assert.equal(s.mods.adrenaline, 1);
+  applyUpgrade(s, 'adrenaline');
+  assert.equal(s.mods.adrenaline, 1);
+});
+
+// --- v5.1: offer exclusions at stack limits ---
+
+const excludedAfter = (id, applyN) => {
+  const s = createShip(0, 0);
+  for (let i = 0; i < applyN; i++) applyUpgrade(s, id);
+  for (let seed = 0; seed < 50; seed++) {
+    assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== id),
+      `${id} should be excluded after ${applyN} picks (seed ${seed})`);
+  }
+};
+const offerableAfter = (id, applyN) => {
+  const s = createShip(0, 0);
+  for (let i = 0; i < applyN; i++) applyUpgrade(s, id);
+  let seen = false;
+  for (let seed = 0; seed < 80 && !seen; seed++) {
+    if (rollOffers(s, makeRng(seed)).some(o => o.id === id)) seen = true;
+  }
+  assert.ok(seen, `${id} should still be offerable after ${applyN} picks`);
+};
+
+test('bigpayload/fastreload/burners/lucky excluded at 2 stacks, offerable below', () => {
+  for (const id of ['bigpayload', 'fastreload', 'burners', 'lucky']) {
+    offerableAfter(id, 0);
+    offerableAfter(id, 1);
+    excludedAfter(id, 2);
+  }
+});
+
+test('rearguard and adrenaline excluded after a single pick', () => {
+  for (const id of ['rearguard', 'adrenaline']) {
+    offerableAfter(id, 0);
+    excludedAfter(id, 1);
+  }
 });

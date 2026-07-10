@@ -63,4 +63,4 @@ export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5
 
 export const GEMS = { lifetime: 6, magnetRadius: 200, magnetAccel: 900, maxSpeed: 480, radius: 5, blueChance: 0.35, redChance: 0.08, boostFill: 0.10, heartFill: 0.10 };
 
-export const ROCKET = { cooldown: 5, speed: 360, damage: 8, aoeRadius: 110, radius: 6, range: 900 };
+export const ROCKET = { cooldown: 5, speed: 360, damage: 8, aoeRadius: 110, radius: 6, range: 900, reloadFloor: 2.2 };

@@ -501,6 +501,66 @@ function buildIcons() {
       px(g, '#eafff0', 6, 4, 4, 8);
       px(g, '#eafff0', 4, 6, 8, 4);
     }),
+    // big payload — a fat warhead over a wide blast ring (bigger rocket AoE)
+    bigpayload: makeIcon((g) => {
+      g.strokeStyle = '#ff9e3e';
+      g.lineWidth = 1;
+      g.globalAlpha = 0.7;
+      g.beginPath(); g.arc(8, 9, 6, 0, Math.PI * 2); g.stroke();
+      g.globalAlpha = 1;
+      g.fillStyle = '#e0524a';                       // warhead body
+      g.beginPath();
+      g.moveTo(8, 2); g.lineTo(11, 6); g.lineTo(11, 11); g.lineTo(5, 11); g.lineTo(5, 6);
+      g.closePath(); g.fill();
+      px(g, '#ffd75e', 7, 4, 2, 3);                  // nose glint
+    }),
+    // fast reload — a rocket with a curved reload arrow (shorter cooldown)
+    fastreload: makeIcon((g) => {
+      g.strokeStyle = '#3ecfe6';
+      g.lineWidth = 1.5;
+      g.beginPath(); g.arc(8, 8, 5, Math.PI * 0.15, Math.PI * 1.7); g.stroke();
+      g.fillStyle = '#3ecfe6';                       // arrowhead
+      g.beginPath(); g.moveTo(12, 4); g.lineTo(14, 8); g.lineTo(10, 7); g.closePath(); g.fill();
+      px(g, '#ff9e3e', 7, 6, 2, 5);                  // tiny rocket
+      g.fillStyle = '#ffd75e';
+      g.beginPath(); g.moveTo(7, 4); g.lineTo(9, 6); g.lineTo(7, 6); g.closePath(); g.fill();
+    }),
+    // efficient burners — a downsized cyan flame plume (less drain)
+    burners: makeIcon((g) => {
+      g.fillStyle = '#3ecfe6';
+      g.beginPath();
+      g.moveTo(8, 2); g.lineTo(12, 9); g.lineTo(8, 14); g.lineTo(4, 9); g.closePath();
+      g.fill();
+      g.fillStyle = '#eaffff';
+      g.beginPath();
+      g.moveTo(8, 5); g.lineTo(10, 9); g.lineTo(8, 12); g.lineTo(6, 9); g.closePath();
+      g.fill();
+    }),
+    // lucky charm — a golden four-leaf clover
+    lucky: makeIcon((g) => {
+      disc(g, '#63d471', 5, 5, 3);
+      disc(g, '#63d471', 11, 5, 3);
+      disc(g, '#63d471', 5, 11, 3);
+      disc(g, '#63d471', 11, 11, 3);
+      px(g, '#3a8a4a', 7, 8, 2, 6);                  // stem
+      disc(g, '#eafff0', 8, 8, 1.2);                 // center highlight
+    }),
+    // rear guard — ship chevron with a backward-firing bolt
+    rearguard: makeIcon((g) => {
+      g.fillStyle = '#c8c8d0';                       // ship pointing right
+      g.beginPath(); g.moveTo(11, 8); g.lineTo(5, 4); g.lineTo(7, 8); g.lineTo(5, 12); g.closePath(); g.fill();
+      px(g, '#ffd75e', 1, 7, 4, 2);                  // rear bolt
+      disc(g, '#fffbe6', 1, 8, 1.2);
+    }),
+    // adrenaline — a red lightning bolt over a heart pulse
+    adrenaline: makeIcon((g) => {
+      disc(g, '#e0524a', 8, 9, 5);
+      g.fillStyle = '#ffd75e';
+      g.beginPath();
+      g.moveTo(9, 3); g.lineTo(5, 9); g.lineTo(8, 9); g.lineTo(7, 14);
+      g.lineTo(12, 7); g.lineTo(9, 7); g.closePath();
+      g.fill();
+    }),
   };
 }
 

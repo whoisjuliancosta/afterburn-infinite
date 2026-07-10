@@ -73,3 +73,60 @@ test('bullets carry bounces from the ricochet mod', () => {
   const [b2] = updateGun(s2, { rotate: 0, thrust: false, held: false, taps: 1 }, 1 / 60, rngMid);
   assert.equal(b2.bounces, 2);
 });
+
+// --- v5.1: Rear Guard ---
+
+test('rearguard adds one backward bullet on held fire only', () => {
+  const s = createShip(0, 0);
+  s.angle = 0;
+  s.mods.rear = 1;
+  const held = updateGun(s, { rotate: 0, thrust: false, held: true, taps: 0 }, 1 / 60, rngMid);
+  assert.equal(held.length, 2); // center + rear
+  const rear = held[held.length - 1];
+  // rear bullet flies straight backward (angle + π → −x when facing +x)
+  assert.ok(Math.abs(Math.atan2(rear.vy, rear.vx) - Math.PI) < 1e-9);
+});
+
+test('rearguard adds to the rear even with spread; not on tap fire', () => {
+  const s = createShip(0, 0);
+  s.mods.rear = 1;
+  s.mods.spread = 1;
+  const held = updateGun(s, { rotate: 0, thrust: false, held: true, taps: 0 }, 1 / 60, rngMid);
+  assert.equal(held.length, 4); // center + 2 sides + rear
+
+  const s2 = createShip(0, 0);
+  s2.mods.rear = 1;
+  const tapped = updateGun(s2, { rotate: 0, thrust: false, held: false, taps: 1 }, 1 / 60, rngMid);
+  assert.equal(tapped.length, 1); // no rear bullet on tap
+});
+
+// --- v5.1: Adrenaline fire-rate boost ---
+
+test('adrenaline shortens auto interval only below half HP', () => {
+  const base = createShip(0, 0);
+  base.mods.adrenaline = 1;
+  base.hp = 3; base.maxHp = 3; // full HP → inactive
+  updateGun(base, { rotate: 0, thrust: false, held: true, taps: 0 }, 1 / 60, rngMid);
+  assert.ok(Math.abs(base.cooldown - GUN.autoInterval) < 1e-9);
+
+  const hurt = createShip(0, 0);
+  hurt.mods.adrenaline = 1;
+  hurt.hp = 1; hurt.maxHp = 3; // 0.333 < 0.5 → active
+  updateGun(hurt, { rotate: 0, thrust: false, held: true, taps: 0 }, 1 / 60, rngMid);
+  assert.ok(Math.abs(hurt.cooldown - GUN.autoInterval / 1.15) < 1e-9);
+});
+
+test('adrenaline is OFF at exactly half HP (strict threshold)', () => {
+  const s = createShip(0, 0);
+  s.mods.adrenaline = 1;
+  s.maxHp = 4; s.hp = 2; // exactly 0.5 → OFF
+  updateGun(s, { rotate: 0, thrust: false, held: true, taps: 0 }, 1 / 60, rngMid);
+  assert.ok(Math.abs(s.cooldown - GUN.autoInterval) < 1e-9);
+});
+
+test('adrenaline does nothing without the mod even below half HP', () => {
+  const s = createShip(0, 0);
+  s.hp = 1; s.maxHp = 3; // hurt but no adrenaline mod
+  updateGun(s, { rotate: 0, thrust: false, held: true, taps: 0 }, 1 / 60, rngMid);
+  assert.ok(Math.abs(s.cooldown - GUN.autoInterval) < 1e-9);
+});

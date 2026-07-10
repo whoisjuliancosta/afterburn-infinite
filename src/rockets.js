@@ -17,22 +17,30 @@ export function createRockets() {
 
 // Spawns a rocket at the ship's nose heading along ship.angle. Returns false
 // (and spawns nothing) while the launcher is still cooling down.
+//
+// Capture point (v5.1): the ship's Big Payload (rocketAoe) and Fast Reload
+// (rocketReload) mods are read HERE, at fire time, and baked into the spawned
+// rocket's aoeRadius and the launcher cooldown. updateRockets stays mod-agnostic
+// (it already reads per-rocket rk.aoeRadius), so mid-flight upgrade changes don't
+// retro-alter a rocket already in the air. Reload multiplier is floored at
+// ROCKET.reloadFloor seconds so cooldown can't shrink below the design floor.
 export function fireRocket(r, ship) {
   if (r.cooldown > 0) return false;
   const cos = Math.cos(ship.angle), sin = Math.sin(ship.angle);
+  const mods = ship.mods || {};
   r.list.push({
     x: ship.x + cos * ship.radius,
     y: ship.y + sin * ship.radius,
     vx: cos * ROCKET.speed,
     vy: sin * ROCKET.speed,
     damage: ROCKET.damage,
-    aoeRadius: ROCKET.aoeRadius,
+    aoeRadius: ROCKET.aoeRadius * (mods.rocketAoe ?? 1),
     radius: ROCKET.radius,
     traveled: 0,
     range: ROCKET.range,
     dead: false,
   });
-  r.cooldown = ROCKET.cooldown;
+  r.cooldown = Math.max(ROCKET.reloadFloor, ROCKET.cooldown * (mods.rocketReload ?? 1));
   return true;
 }
 

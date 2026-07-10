@@ -75,6 +75,7 @@ let boosting = false;   // last-frame boost state (plume scale, afterimage, sfx 
 let wasBoosting = false;// prior-frame boost state, for the boost-start sfx edge
 let shipTrail = [];     // recent {x, y, angle} for the boost afterimage
 let boostTrailT = 0;    // afterimage lifetime countdown (kept fresh while boosting)
+let rocketPending = false; // latched right-click; survives hit-pause frames until the fire check consumes it
 
 const HOSTILE = '#ff5b8a'; // enemy-shot color
 
@@ -98,6 +99,7 @@ function startRun() {
   wasBoosting = false;
   shipTrail = [];
   boostTrailT = 0;
+  rocketPending = false;
   startWave(1);
   mode = 'playing';
 }
@@ -140,7 +142,7 @@ function killEnemy(e) {
   } else {
     // Gems v2: one mutually-exclusive roll → blue (boost) / red (heart) / none.
     // Splitter and boss-class kills roll red at 2× (isBig).
-    const kind = rollDrop(rng, e.type === 'splitter');
+    const kind = rollDrop(rng, e.type === 'splitter', ship.mods.luck);
     if (kind) spawnGem(gems, e.x, e.y, gemValue, rng, kind);
     spawnExplosion(e.x, e.y, e.radius);
     burst(fx, e.x, e.y, '#ff9e3e', 7, rng, 160, true); // halved: sprite carries it
@@ -224,9 +226,15 @@ function tickPlaying(snap, dt) {
   bullets.push(...shots);
   bullets = updateBullets(bullets, dt, arena);
 
-  // Rockets: right-click launches one along the nose (fireRocket returns false
-  // while cooling down — only whoosh + count the launch when it actually fires).
-  if (snap.rocketPressed && fireRocket(rockets, ship)) sfxRocket();
+  // Rockets: right-click launches one along the nose. rocketPending is latched in
+  // frame() so a click landing on a hit-pause frame (tickPlaying returns above
+  // before this line) isn't lost. Consume the latch here — clearing it whether or
+  // not the shot fires, so it recovers a pause-eaten click without queuing through
+  // the cooldown. fireRocket returns false while cooling down (whoosh only fires).
+  if (rocketPending) {
+    rocketPending = false;
+    if (fireRocket(rockets, ship)) sfxRocket();
+  }
 
   // spawn pipeline: schedule → telegraph → enemy
   waveT += dt;
@@ -278,6 +286,12 @@ function tickPlaying(snap, dt) {
   // normal kills). shotsHit isn't credited to rockets (that stat tracks the gun).
   const detonations = updateRockets(rockets, enemies, dt);
   for (const det of detonations) {
+    // Range-end detonation in empty air (zero hits): skip the big FX/sfx — just a
+    // small fizzle puff so empty booms don't flash the screen (v5 review minor).
+    if (det.hits.length === 0) {
+      burst(fx, det.x, det.y, '#e6743e', 6, rng, 90); // small non-additive fizzle
+      continue;
+    }
     burst(fx, det.x, det.y, '#ff9e3e', 26, rng, 300, true); // big additive glow
     spawnExplosion(det.x, det.y, ROCKET.aoeRadius * 0.5);
     addShake(fx, 10);
@@ -705,6 +719,9 @@ function frame(t) {
     if (!handlePaintClick(snap)) { initAudio(); startRun(); }
   }
   else if (mode === 'playing') {
+    // Latch a right-click before anything can early-return; tickPlaying consumes it
+    // (may be a hit-pause frame that returns before the fire check).
+    if (snap.rocketPressed) rocketPending = true;
     // Toggling pause skips tickPlaying for this frame, so ~1 frame of world time
     // (this dt, already clamped) is dropped per toggle; ~2 across a pause+resume.
     // Intentional and player-favorable — the world advances slightly less, never
