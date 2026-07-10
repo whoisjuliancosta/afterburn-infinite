@@ -1,6 +1,6 @@
 // src/ship.js
 import { SHIP, GUN } from './config.js';
-import { TAU } from './utils.js';
+import { TAU, angleDiff } from './utils.js';
 
 export function createShip(x, y) {
   return {
@@ -15,7 +15,15 @@ export function createShip(x, y) {
 }
 
 export function updateShip(ship, input, dt, arena) {
-  ship.angle += input.rotate * SHIP.turnRate * dt;
+  if (input.rotate) {
+    ship.angle += input.rotate * SHIP.turnRate * dt; // keyboard override
+  } else if (input.aimX != null) {
+    // nose chases the cursor at turn rate — aim is a skill, not a snap
+    const want = Math.atan2(input.aimY - ship.y, input.aimX - ship.x);
+    const diff = angleDiff(ship.angle, want);
+    const step = SHIP.turnRate * dt;
+    ship.angle += Math.abs(diff) <= step ? diff : Math.sign(diff) * step;
+  }
 
   if (input.thrust) {
     const a = SHIP.thrust * ship.mods.engine;

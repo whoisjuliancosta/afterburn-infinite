@@ -40,7 +40,7 @@ export function drawMenu(g, w, h, best) {
   g.fillText('UNTITLED SPACE SHOOTER', w / 2, h * 0.32);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('A/D or ←/→ rotate · W or ↑ thrust', w / 2, h * 0.48);
+  g.fillText('aim with mouse · W or ↑ thrust · A/D override turn', w / 2, h * 0.48);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.53);
   if (best > 0) {
     g.fillStyle = ACCENT;
