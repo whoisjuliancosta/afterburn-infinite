@@ -8,7 +8,8 @@ export function waveBudget(wave, power = 0) {
   return Math.round(
     WAVE.baseBudget +
     WAVE.budgetPerWave * (wave - 1) +
-    WAVE.powerBudget * power
+    WAVE.powerBudget * power +
+    (wave > WAVE.lateStart ? WAVE.lateBudgetPerWave * (wave - WAVE.lateStart) : 0)
   );
 }
 

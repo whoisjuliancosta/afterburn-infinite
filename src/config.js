@@ -41,17 +41,21 @@ export const ENEMIES = {
               weaveAmp: 70, weaveFreq: 0.9 },
   boss:     { cost: 0, hp: 60, speed: 32, radius: 42, score: 2000, unlock: 5,
               ringEvery: 3.0, ringCount: 10, chargeEvery: 7.0, chargeSpeed: 380,
-              chargeTime: 0.6, spawnEvery: 8.0, shotSpeed: 170, shotRadius: 6 },
+              chargeTime: 0.6, spawnEvery: 8.0, shotSpeed: 170, shotRadius: 6,
+              burstEvery: 4.0, wallEvery: 9.0, blinkEvery: 7.0,
+              blinkTelegraph: 0.6, blinkMinDist: 260 },
 };
 
 export const WAVE = {
   baseBudget: 4,
-  budgetPerWave: 2.5,        // budget = round(4 + 2.5*(wave-1) + 1.5*power)
+  budgetPerWave: 2.5,        // budget = round(4 + 2.5*(wave-1) + 1.5*power + late)
   powerBudget: 1.5,          // extra budget per player upgrade taken this run
-  scalePerWave: 0.06,        // +6% enemy hp/speed per wave
+  lateBudgetPerWave: 3,      // extra budget per wave past lateStart (accelerating)
+  lateStart: 10,             // wave after which the late budget term kicks in
+  scalePerWave: 0.07,        // +7% enemy hp/speed per wave
   spawnInterval: 1.1,        // s between trickled spawns at wave 1 (base)
-  spawnIntervalFloor: 0.35,  // fastest trickle
-  spawnIntervalStep: 0.05,   // spacing shaved per wave past 1
+  spawnIntervalFloor: 0.22,  // fastest trickle
+  spawnIntervalStep: 0.06,   // spacing shaved per wave past 1
   telegraphTime: 1.0,        // s of spawn warning marker
 };
 
