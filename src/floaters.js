@@ -3,7 +3,7 @@
 
 const RISE = 30; // px/s upward drift
 const MAX_LIVE = 40;
-const LIFETIME = { dmg: 0.7, crit: 0.7, combo: 1.2, info: 1.2 };
+const LIFETIME = { dmg: 0.7, crit: 0.7, combo: 1.2, info: 1.2, gem: 0.9 };
 
 export function createFloaters() {
   return { list: [] };
