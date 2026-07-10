@@ -115,7 +115,9 @@ function fire(ship, jitter, rng, withSpread) {
       angles.push(ship.angle + GUN.spreadShotAngle * i, ship.angle - GUN.spreadShotAngle * i);
     }
     // Rear Guard: one extra bullet straight backward, on held auto-fire only.
-    if (ship.mods.rear) angles.push(ship.angle + Math.PI);
+    for (let i = 0; i < (ship.mods.rear || 0); i++) {
+      angles.push(ship.angle + Math.PI + GUN.spreadShotAngle * (i - (ship.mods.rear - 1) / 2));
+    }
   }
 
   ship.vx -= Math.cos(ship.angle) * SHIP.recoil;

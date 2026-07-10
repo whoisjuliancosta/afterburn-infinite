@@ -127,19 +127,18 @@ test('boosttank units never exceed BOOST.maxUnits', () => {
   assert.equal(s.boost.units, BOOST.maxUnits);
 });
 
-test('boosttank excluded once at 2 stacks (re-rolls like aegis)', () => {
+test('boosttank excluded once at 6 stacks (re-rolls like aegis)', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'boosttank');
-  applyUpgrade(s, 'boosttank'); // stacks now 2
-  assert.equal(s.boost.stacks, 2);
+  for (let i = 0; i < 6; i++) applyUpgrade(s, 'boosttank');
+  assert.equal(s.boost.stacks, 6);
   for (let seed = 0; seed < 50; seed++) {
     assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'boosttank'));
   }
 });
 
-test('boosttank still offerable below 2 stacks', () => {
+test('boosttank still offerable below 6 stacks', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'boosttank'); // stacks 1
+  for (let i = 0; i < 5; i++) applyUpgrade(s, 'boosttank'); // stacks 5
   let seen = false;
   for (let seed = 0; seed < 50 && !seen; seed++) {
     if (rollOffers(s, makeRng(seed)).some(o => o.id === 'boosttank')) seen = true;
@@ -156,18 +155,17 @@ test('attractor multiplies gem magnet radius by 1.45 per stack', () => {
   assert.ok(Math.abs(s.mods.magnet - 1.45 * 1.45) < 1e-9);
 });
 
-test('attractor excluded once at 2 stacks (magnet at 1.45^2)', () => {
+test('attractor excluded once at 6 stacks (magnet at 1.45^6)', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'attractor');
-  applyUpgrade(s, 'attractor');
+  for (let i = 0; i < 6; i++) applyUpgrade(s, 'attractor');
   for (let seed = 0; seed < 50; seed++) {
     assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'attractor'));
   }
 });
 
-test('attractor still offerable below 2 stacks', () => {
+test('attractor still offerable below 6 stacks', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'attractor'); // 1 stack
+  for (let i = 0; i < 5; i++) applyUpgrade(s, 'attractor'); // 5 stacks
   let seen = false;
   for (let seed = 0; seed < 50 && !seen; seed++) {
     if (rollOffers(s, makeRng(seed)).some(o => o.id === 'attractor')) seen = true;
@@ -286,12 +284,13 @@ test('lucky multiplies gem-drop luck ×1.3 per stack', () => {
   assert.ok(Math.abs(s.mods.luck - 1.3 * 1.3) < 1e-9);
 });
 
-test('rearguard sets the rear flag (single stack, idempotent)', () => {
+test('rearguard stacks to 3 backward bullets', () => {
   const s = createShip(0, 0);
   applyUpgrade(s, 'rearguard');
   assert.equal(s.mods.rear, 1);
   applyUpgrade(s, 'rearguard');
-  assert.equal(s.mods.rear, 1);
+  applyUpgrade(s, 'rearguard');
+  assert.equal(s.mods.rear, 3);
 });
 
 test('adrenaline sets the adrenaline flag (single stack, idempotent)', () => {
@@ -322,17 +321,17 @@ const offerableAfter = (id, applyN) => {
   assert.ok(seen, `${id} should still be offerable after ${applyN} picks`);
 };
 
-test('bigpayload/fastreload/burners/lucky excluded at 2 stacks, offerable below', () => {
+test('bigpayload/fastreload/burners/lucky excluded at 6 stacks, offerable below', () => {
   for (const id of ['bigpayload', 'fastreload', 'burners', 'lucky']) {
     offerableAfter(id, 0);
-    offerableAfter(id, 1);
-    excludedAfter(id, 2);
+    offerableAfter(id, 5);
+    excludedAfter(id, 6);
   }
 });
 
-test('rearguard and adrenaline excluded after a single pick', () => {
-  for (const id of ['rearguard', 'adrenaline']) {
-    offerableAfter(id, 0);
-    excludedAfter(id, 1);
-  }
+test('adrenaline excluded after one pick; rearguard after three', () => {
+  offerableAfter('adrenaline', 0);
+  excludedAfter('adrenaline', 1);
+  offerableAfter('rearguard', 2);
+  excludedAfter('rearguard', 3);
 });

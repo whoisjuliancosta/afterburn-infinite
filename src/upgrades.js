@@ -2,12 +2,12 @@
 import { CAPS, BOOST } from './config.js';
 
 const EPS = 1e-9;
-const MAGNET_CAP = 1.45 * 1.45; // Attractor: 2 stacks max
+const MAGNET_CAP = 1.45 ** 6; // Attractor: 6 stacks max
 // v5.1 upgrade stack ceilings (own limits — not in the CAPS table).
-const AOE_CAP = 1.4 * 1.4;      // Big Payload: 2 stacks
-const RELOAD_CAP = 0.75 * 0.75; // Fast Reload: 2 stacks (floor multiplier)
-const DRAIN_CAP = 0.75 * 0.75;  // Efficient Burners: 2 stacks (floor multiplier)
-const LUCK_CAP = 1.3 * 1.3;     // Lucky Charm: 2 stacks
+const AOE_CAP = 1.4 ** 6;      // Big Payload: 6 stacks
+const RELOAD_CAP = 0.75 ** 6; // Fast Reload: 6 stacks (floor multiplier)
+const DRAIN_CAP = 0.75 ** 6;  // Efficient Burners: 6 stacks (floor multiplier)
+const LUCK_CAP = 1.3 ** 6;     // Lucky Charm: 6 stacks
 
 export const UPGRADES = [
   { id: 'rapid',    name: 'Rapid Fire',      desc: '+25% fire rate',           apply: s => { s.mods.fireRate *= 1.25; } },
@@ -20,24 +20,24 @@ export const UPGRADES = [
   { id: 'aegis',    name: 'Aegis Shield',    desc: 'Blocks 1 hit, recharges',  apply: s => { s.shield.owned = true; s.shield.up = true; } },
   { id: 'deadeye',      name: 'Deadeye',        desc: '+8% crit chance',              apply: s => { s.mods.critChance += 0.08; } },
   { id: 'executioner',  name: 'Executioner',    desc: '+50% crit damage',             apply: s => { s.mods.critMult += 0.5; } },
-  { id: 'boosttank',    name: 'Boost Tank',     desc: '+1 boost unit (2 stacks max)',
+  { id: 'boosttank',    name: 'Boost Tank',     desc: '+1 boost unit (6 stacks max)',
     apply: s => { s.boost.units = Math.min(BOOST.maxUnits, s.boost.units + 1); s.boost.stacks = (s.boost.stacks || 0) + 1; } },
-  { id: 'attractor',    name: 'Attractor',      desc: '+45% gem pull radius (2 stacks max)',
+  { id: 'attractor',    name: 'Attractor',      desc: '+45% gem pull radius (6 stacks max)',
     apply: s => { s.mods.magnet = (s.mods.magnet || 1) * 1.45; } },
   { id: 'ricochet',     name: 'Ricochet',       desc: 'Bullets bounce off walls +1',  apply: s => { s.mods.bounce += 1; } },
   { id: 'overclock',    name: 'Overclock',      desc: '+10% fire rate & bullet speed', apply: s => { s.mods.fireRate *= 1.1; s.mods.bulletSpeed *= 1.1; } },
   { id: 'secondwind',   name: 'Second Wind',    desc: 'Heal 2',                       apply: s => { s.hp = Math.min(s.maxHp, s.hp + 2); } },
   // v5.1 pool additions (15 → 21).
-  { id: 'bigpayload',   name: 'Big Payload',    desc: '+40% rocket blast radius (2 stacks max)',
+  { id: 'bigpayload',   name: 'Big Payload',    desc: '+40% rocket blast radius (6 stacks max)',
     apply: s => { s.mods.rocketAoe *= 1.4; } },
-  { id: 'fastreload',   name: 'Fast Reload',    desc: '-25% rocket cooldown (2 stacks max)',
+  { id: 'fastreload',   name: 'Fast Reload',    desc: '-25% rocket cooldown (6 stacks max)',
     apply: s => { s.mods.rocketReload *= 0.75; } },
-  { id: 'burners',      name: 'Efficient Burners', desc: '-25% boost drain (2 stacks max)',
+  { id: 'burners',      name: 'Efficient Burners', desc: '-25% boost drain (6 stacks max)',
     apply: s => { s.mods.boostDrain *= 0.75; } },
-  { id: 'lucky',        name: 'Lucky Charm',    desc: '+30% gem drop chance (2 stacks max)',
+  { id: 'lucky',        name: 'Lucky Charm',    desc: '+30% gem drop chance (6 stacks max)',
     apply: s => { s.mods.luck *= 1.3; } },
-  { id: 'rearguard',    name: 'Rear Guard',     desc: 'Auto-fire adds 1 bullet backward',
-    apply: s => { s.mods.rear = 1; } },
+  { id: 'rearguard',    name: 'Rear Guard',     desc: '+1 backward bullet on auto (3 stacks max)',
+    apply: s => { s.mods.rear = (s.mods.rear || 0) + 1; } },
   { id: 'adrenaline',   name: 'Adrenaline',     desc: 'Below half HP: +15% fire rate, +10% speed',
     apply: s => { s.mods.adrenaline = 1; } },
 ];
@@ -47,7 +47,7 @@ function isExcluded(ship, id) {
   const atCap = (mod, cap) => ship.mods[mod] >= cap - EPS;
   switch (id) {
     case 'aegis':     return ship.shield.owned;
-    case 'boosttank': return (ship.boost.stacks || 0) >= 2;
+    case 'boosttank': return (ship.boost.stacks || 0) >= 6;
     case 'attractor': return (ship.mods.magnet || 1) >= MAGNET_CAP - EPS;
     case 'rapid':     return atCap('fireRate', CAPS.fireRate);
     case 'engine':    return atCap('engine', CAPS.engine);
@@ -62,7 +62,7 @@ function isExcluded(ship, id) {
     case 'fastreload': return (ship.mods.rocketReload ?? 1) <= RELOAD_CAP + EPS;
     case 'burners':    return (ship.mods.boostDrain ?? 1) <= DRAIN_CAP + EPS;
     case 'lucky':      return (ship.mods.luck ?? 1) >= LUCK_CAP - EPS;
-    case 'rearguard':  return (ship.mods.rear || 0) >= 1;
+    case 'rearguard':  return (ship.mods.rear || 0) >= 3;
     case 'adrenaline': return (ship.mods.adrenaline || 0) >= 1;
     default:          return false;
   }

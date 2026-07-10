@@ -317,10 +317,10 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
   g.textBaseline = 'middle';
   g.fillStyle = INK;
   g.font = `bold 42px ${FONT}`;
-  g.fillText('UNTITLED SPACE SHOOTER', w / 2, h * 0.28);
+  g.fillText('AFTERBURN INFINITE', w / 2, h * 0.28);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('W thrust · aim with mouse · hold SPACE boost · right-click rocket', w / 2, h * 0.42);
+  g.fillText('W thrust · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
   if (best > 0) {
     g.fillStyle = ACCENT;
