@@ -186,12 +186,13 @@ function collectGem(gem) {
   return applyGem(run, ship, gem.kind);
 }
 
-// Map an applyGem result to a pickup floater: blue → '+10%' cyan; red at full HP
-// (heart lost) → 'FULL'; any other red → '+10% ♥' red.
+// Map an applyGem result to a pickup floater. Percentages derive from config so
+// balance tweaks stay single-sourced: blue → `+25%` cyan; red completing a heart
+// at full HP (grown container) → `+1 MAX ♥`; any other red → `+10% ♥` red.
 function gemFloater(res) {
-  if (res.kind === 'blue') return { text: '+10%', kind: 'gem' };
-  if (res.full) return { text: 'FULL', kind: 'heart' };
-  return { text: '+10% ♥', kind: 'heart' };
+  if (res.kind === 'blue') return { text: `+${Math.round(GEMS.boostFill * 100)}%`, kind: 'gem' };
+  if (res.grown) return { text: '+1 MAX ♥', kind: 'heart' };
+  return { text: `+${Math.round(GEMS.heartFill * 100)}% ♥`, kind: 'heart' };
 }
 
 function tickPlaying(snap, dt) {

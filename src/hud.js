@@ -99,20 +99,51 @@ export function drawHud(g, w, run, ship, rockets = null) {
 
   // Hearts (top-right)
   const rightX = w - margin;
-  if (SPRITES.heart) {
-    const heartH = Math.round(1.6 * u);
+  if (SPRITES.heart && SPRITES.heartEmpty) {
     const hs = SPRITES.heart;
-    const heartW = Math.round(heartH * (hs.width / hs.height));
-    const gap = Math.round(u * 0.25);
-    const step = heartW + gap;
-    for (let i = 0; i < ship.maxHp; i++) {
-      const x = rightX - (ship.maxHp - i) * step;
-      const spr = i < ship.hp ? SPRITES.heart : SPRITES.heartEmpty;
-      g.drawImage(spr, x, margin, heartW, heartH);
+    const aspect = hs.width / hs.height;
+    // In-progress heart: at full HP an extra empty container previews the next
+    // heart filling — overheal grows containers (v5.2), so red gems keep counting.
+    const progress = Math.max(0, Math.min(1, run.heartProgress || 0));
+    const inProgress = ship.hp >= ship.maxHp && progress > 0;
+    const slots = ship.maxHp + (inProgress ? 1 : 0);
+    const hasShield = ship.shield.owned && SPRITES.shieldHeart;
+
+    // Size the row, shrinking when unbounded hearts would overflow ~30% of the
+    // screen width (keeps clear of the centered wave label). Min height 8px.
+    const sizeFor = (h) => {
+      const hw = h * aspect;
+      const gp = Math.max(2, h * 0.15);
+      const st = hw + gp;
+      const rowW = slots * st + (hasShield ? st + u * 0.3 : 0);
+      return { hw, gp, st, rowW };
+    };
+    let heartH = Math.round(1.6 * u);
+    let s = sizeFor(heartH);
+    const maxRowW = w * 0.30;
+    if (s.rowW > maxRowW) {
+      heartH = Math.max(8, heartH * (maxRowW / s.rowW));
+      s = sizeFor(heartH);
     }
-    // Shield heart to the left of the hearts row when owned
-    if (ship.shield.owned && SPRITES.shieldHeart) {
-      const x = rightX - ship.maxHp * step - step - Math.round(u * 0.3);
+    heartH = Math.round(heartH);
+    const heartW = Math.round(s.hw);
+    const gap = Math.max(2, Math.round(s.gp));
+    const step = heartW + gap;
+
+    for (let i = 0; i < slots; i++) {
+      const x = rightX - (slots - i) * step;
+      if (i < ship.hp) {
+        g.drawImage(SPRITES.heart, x, margin, heartW, heartH); // full
+      } else {
+        g.drawImage(SPRITES.heartEmpty, x, margin, heartW, heartH); // empty
+        // The first empty container shows fractional progress toward the next
+        // heart (also the in-progress extra slot when already at full HP).
+        if (i === ship.hp) fillHeart(g, SPRITES.heart, x, margin, heartW, heartH, progress);
+      }
+    }
+    // Shield heart to the left of the whole row (incl. in-progress slot) when owned
+    if (hasShield) {
+      const x = rightX - (slots + 1) * step - Math.round(u * 0.3);
       g.globalAlpha = ship.shield.up ? 1 : 0.35;
       g.drawImage(SPRITES.shieldHeart, x, margin, heartW, heartH);
       g.globalAlpha = 1;
@@ -153,6 +184,17 @@ export function drawHud(g, w, run, ship, rockets = null) {
     }
   }
   g.textAlign = 'left';
+}
+
+// Partial bottom-up heart fill: overlay the bottom `frac` slice of the full
+// heart sprite onto an already-drawn empty container. Source-rect drawImage —
+// no per-frame canvases, no clip/save churn.
+function fillHeart(g, full, x, y, w, h, frac) {
+  frac = Math.max(0, Math.min(1, frac));
+  if (frac <= 0) return;
+  const sh = full.height * frac;
+  const dh = h * frac;
+  g.drawImage(full, 0, full.height - sh, full.width, sh, x, y + h - dh, w, dh);
 }
 
 // Boost bar: dark track split into `units` segments, cyan fill shows the meter

@@ -104,9 +104,19 @@ test('applyGem blue clamps the boost meter to units capacity', () => {
   const run = createRun();
   const ship = createShip(0, 0);
   ship.boost.units = 1;
-  ship.boost.meter = 0.97; // +0.10 would overflow past 1.0
+  ship.boost.meter = 0.97; // +boostFill would overflow past 1.0
   applyGem(run, ship, 'blue');
   assert.equal(ship.boost.meter, 1); // clamped, overflow lost
+});
+
+test('applyGem blue fill uses the config value (0.25)', () => {
+  assert.equal(GEMS.boostFill, 0.25);
+  const run = createRun();
+  const ship = createShip(0, 0);
+  ship.boost.meter = 0;
+  const res = applyGem(run, ship, 'blue');
+  assert.ok(Math.abs(res.gained - 0.25) < 1e-9);
+  assert.ok(Math.abs(ship.boost.meter - 0.25) < 1e-9);
 });
 
 test('applyGem red accumulates heartProgress by heartFill without healing yet', () => {
@@ -142,14 +152,65 @@ test('applyGem red keeps the remainder when crossing 1.0 from a partial', () => 
   assert.ok(Math.abs(run.heartProgress - 0.05) < 1e-9);
 });
 
-test('applyGem red at full hp consumes progress but returns FULL (overflow lost)', () => {
+test('applyGem red overheal at full hp grows a new heart container and fills it', () => {
   const run = createRun();
   const ship = createShip(0, 0);
-  ship.hp = ship.maxHp; // already full
+  ship.hp = ship.maxHp; // already full (3/3)
   let res;
-  for (let i = 0; i < 10; i++) res = applyGem(run, ship, 'red');
-  assert.equal(ship.hp, ship.maxHp); // capped, no overflow
-  assert.ok(res.full);
-  assert.ok(!res.healed);
-  assert.ok(Math.abs(run.heartProgress) < 1e-9); // progress still consumed
+  for (let i = 0; i < 10; i++) res = applyGem(run, ship, 'red'); // completes a heart
+  assert.equal(ship.maxHp, 4);       // container grew
+  assert.equal(ship.hp, 4);          // and is filled
+  assert.ok(res.healed);
+  assert.ok(res.grown);
+  assert.ok(Math.abs(run.heartProgress) < 1e-9); // accumulator reset
+});
+
+test('applyGem red overheal grows repeatedly (3 -> 4 -> 5)', () => {
+  const run = createRun();
+  const ship = createShip(0, 0);
+  ship.hp = ship.maxHp; // 3/3
+  for (let i = 0; i < 10; i++) applyGem(run, ship, 'red');
+  assert.equal(ship.maxHp, 4);
+  assert.equal(ship.hp, 4);
+  for (let i = 0; i < 10; i++) applyGem(run, ship, 'red');
+  assert.equal(ship.maxHp, 5);
+  assert.equal(ship.hp, 5);
+});
+
+test('applyGem red partial progress at full hp does not grow until completion', () => {
+  const run = createRun();
+  const ship = createShip(0, 0);
+  ship.hp = ship.maxHp; // 3/3
+  for (let i = 0; i < 9; i++) {          // 0.9 accrued, no completion
+    const res = applyGem(run, ship, 'red');
+    assert.ok(!res.grown);
+  }
+  assert.equal(ship.maxHp, 3);
+  assert.equal(ship.hp, 3);
+  const res = applyGem(run, ship, 'red'); // 10th completes -> grow
+  assert.ok(res.grown);
+  assert.equal(ship.maxHp, 4);
+});
+
+test('applyGem red never returns the removed `full` outcome', () => {
+  const run = createRun();
+  const ship = createShip(0, 0);
+  ship.hp = ship.maxHp;
+  for (let i = 0; i < 30; i++) {
+    const res = applyGem(run, ship, 'red');
+    assert.equal(res.full, undefined);
+  }
+});
+
+// Grown maxHp naturally raises the adrenaline band (threshold is hp/maxHp < 0.5):
+// this is accepted behavior — more containers means the low-HP surge kicks in
+// deeper. Documented here so the interaction isn't mistaken for a regression.
+test('grown maxHp raises the adrenaline hp/maxHp threshold band', () => {
+  const run = createRun();
+  const ship = createShip(0, 0);
+  ship.hp = ship.maxHp; // 3/3
+  for (let i = 0; i < 20; i++) applyGem(run, ship, 'red'); // grow to 5/5
+  assert.equal(ship.maxHp, 5);
+  // At 2 hp: 2/3 (0.67) would be above the 0.5 band, but 2/5 (0.4) is below it.
+  assert.ok(2 / ship.maxHp < 0.5);
 });
