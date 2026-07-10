@@ -276,7 +276,10 @@ function tickPlaying(snap, dt) {
   const collected = updateGems(gems, ship, dt);
   for (const c of collected) {
     collectGem(c);
-    burst(fx, c.x, c.y, '#5fe8ff', 4, rng, 120, true); // tiny glow burst
+    burst(fx, c.x, c.y, '#5fe8ff', 8, rng, 150, true);
+    // The payout was invisible before — show it where it happened, floating
+    // clear of the ship sprite.
+    addFloater(floaters, c.x, c.y - ship.radius * 1.4, `+${c.value * multiplier(run)}`, 'gem');
   }
   if (collected.length > 0) sfxGem();
 
@@ -558,6 +561,7 @@ function renderFloaters() {
     g.globalAlpha = clamp(1 - fl.t / fl.life, 0, 1);
     let size, color, weight = '';
     if (fl.kind === 'crit')      { size = 1.65 * u; color = '#ffd75e'; weight = 'bold '; }
+    else if (fl.kind === 'gem')   { size = 1.25 * u; color = '#5fe8ff'; weight = 'bold '; }
     else if (fl.kind === 'combo') { size = 1.5 * u;  color = '#ff9e3e'; weight = 'bold '; }
     else if (fl.kind === 'info')  { size = 1.9 * u;  color = '#e8e6d8'; weight = 'bold '; }
     else                          { size = 1.1 * u;  color = '#ffffff'; }
