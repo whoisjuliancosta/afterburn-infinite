@@ -18,12 +18,27 @@ test('createShip has spec defaults', () => {
   assert.deepEqual(s.shield, { owned: false, up: false });
 });
 
-test('movement input thrusts in screen directions, independent of aim', () => {
+test('W thrusts toward the facing (forward), not screen-up', () => {
   const s = createShip(400, 300);
-  s.angle = 0; // aiming right...
-  updateShip(s, { ...idle, moveX: 0, moveY: -1 }, 0.1, arena); // ...moving up
-  assert.ok(s.vy < 0);
+  s.angle = 0; // facing right
+  updateShip(s, { ...idle, moveX: 0, moveY: -1 }, 0.1, arena); // W
+  assert.ok(s.vx > 0);
+  assert.ok(Math.abs(s.vy) < 1e-9);
+});
+
+test('D strafes to the ship\'s right of the facing', () => {
+  const s = createShip(400, 300);
+  s.angle = 0; // facing right → ship's right is screen-down
+  updateShip(s, { ...idle, moveX: 1, moveY: 0 }, 0.1, arena);
+  assert.ok(s.vy > 0);
   assert.ok(Math.abs(s.vx) < 1e-9);
+});
+
+test('S backs away from the facing', () => {
+  const s = createShip(400, 300);
+  s.angle = 0;
+  updateShip(s, { ...idle, moveX: 0, moveY: 1 }, 0.1, arena);
+  assert.ok(s.vx < 0);
 });
 
 test('diagonal movement is normalized (no speed advantage)', () => {

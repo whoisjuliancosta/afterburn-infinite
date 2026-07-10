@@ -1,7 +1,7 @@
 // src/main.js
 import { WAVE, CRIT, GEMS } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
-import { createShip, updateShip, updateGun, tryDash, creditDash } from './ship.js';
+import { createShip, updateShip, updateGun, tryDash, creditDash, moveDir } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
 import { spawnEnemy, updateEnemy, deathSpawns } from './enemies.js';
 import { buildWave, scheduleWave } from './waves.js';
@@ -187,7 +187,8 @@ function tickPlaying(snap, dt) {
   if (fx.pause > 0) return; // hit-pause freezes the world, not the fx
 
   // Dash: edge-triggered impulse + iframes, with burst, SFX and afterimage.
-  if (snap.dashPressed && tryDash(ship, snap.moveX, snap.moveY)) {
+  const md = moveDir(ship, snap);
+  if (snap.dashPressed && tryDash(ship, md ? md.x : 0, md ? md.y : 0)) {
     run.stats.dashes += 1;
     sfxDash();
     burst(fx, ship.x - Math.cos(ship.angle) * ship.radius,
@@ -196,8 +197,8 @@ function tickPlaying(snap, dt) {
   }
 
   updateShip(ship, snap, dt, arena);
-  thrusting = !!(snap.moveX || snap.moveY);
-  if (thrusting) moveAngle = Math.atan2(snap.moveY, snap.moveX);
+  thrusting = !!md;
+  if (md) moveAngle = Math.atan2(md.y, md.x);
 
   const shots = updateGun(ship, snap, dt, rng);
   if (shots.length > 0) {
