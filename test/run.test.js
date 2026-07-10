@@ -21,6 +21,33 @@ test('addKill scores base * multiplier and grows streak', () => {
   assert.equal(run.streak, 6);
 });
 
+test('createRun initializes flat stats block at zero', () => {
+  const run = createRun();
+  assert.deepEqual(run.stats, {
+    kills: 0, shotsFired: 0, shotsHit: 0, dashes: 0,
+    gemsCollected: 0, bossKills: 0, runTime: 0,
+  });
+});
+
+test('addKill increments stats.kills', () => {
+  const run = createRun();
+  addKill(run, { score: 100 });
+  assert.equal(run.stats.kills, 1);
+  assert.equal(run.stats.bossKills, 0);
+  addKill(run, { score: 50 });
+  assert.equal(run.stats.kills, 2);
+});
+
+test('addKill increments bossKills only for boss enemies', () => {
+  const run = createRun();
+  addKill(run, { score: 2000, type: 'boss' });
+  assert.equal(run.stats.kills, 1);
+  assert.equal(run.stats.bossKills, 1);
+  addKill(run, { score: 100, type: 'grunt' });
+  assert.equal(run.stats.kills, 2);
+  assert.equal(run.stats.bossKills, 1);
+});
+
 test('hit during iframes does nothing', () => {
   const run = createRun();
   const ship = createShip(0, 0);
