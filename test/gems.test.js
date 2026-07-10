@@ -98,6 +98,18 @@ test('a gem within its lifetime survives an update', () => {
   assert.ok(Math.abs(g.list[0].age - 0.1) < 1e-9);
 });
 
+test('updateGems does NOT auto-collect a distant gem (vacuum is main\'s job)', () => {
+  // Guards the boundary: updateGems only collects on circle overlap. Sweeping up
+  // far-off field gems on wave clear is main.js's explicit vacuum, not this
+  // module's — so a gem the ship never touches must never appear in collected[].
+  const g = createGems();
+  spawnGem(g, 500, 500, 99, makeRng(1));
+  const ship = { x: 0, y: 0, radius: 18 };
+  const collected = updateGems(g, ship, 0.016);
+  assert.equal(collected.length, 0);
+  assert.equal(g.list.length, 1); // still on the field, uncollected
+});
+
 test('spawnGemRing places n gems evenly on a ~40px ring around the centre', () => {
   const g = createGems();
   const gems = spawnGemRing(g, 100, 100, 42, 6, makeRng(7));

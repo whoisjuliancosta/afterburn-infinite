@@ -271,7 +271,9 @@ export function drawGameOver(g, w, h, run, best, paint = '#e8e6d8', board = [], 
 
   // Two panels: run stats (left) + leaderboard (right).
   const st = run.stats || {};
-  const acc = st.shotsFired > 0 ? Math.round((st.shotsHit / st.shotsFired) * 100) : 0;
+  // Clamp: pierce can register more hits than shots fired, pushing raw accuracy
+  // past 100%.
+  const acc = st.shotsFired > 0 ? Math.min(100, Math.round((st.shotsHit / st.shotsFired) * 100)) : 0;
   const secs = Math.floor(st.runTime || 0);
   const timeStr = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
   const statLines = [

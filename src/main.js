@@ -141,6 +141,17 @@ function damagePlayer() {
   }
 }
 
+// Award a single gem's payout: score (×multiplier), the gemsCollected stat, and
+// a shave off the active dash recharge. Shared by the collect path and the
+// wave-clear vacuum so both stay in lockstep. Visual/audio FX are the caller's.
+function collectGem(gem) {
+  run.score += gem.value * multiplier(run);
+  run.stats.gemsCollected += 1;
+  if (ship.dash.charges < ship.dash.max) {
+    ship.dash.recharge = Math.max(0, ship.dash.recharge - GEMS.dashCredit);
+  }
+}
+
 function tickPlaying(snap, dt) {
   run.stats.runTime += dt; // unpaused seconds (paused ticks never reach here)
   updateFloaters(floaters, dt);
@@ -236,11 +247,7 @@ function tickPlaying(snap, dt) {
   // active dash recharge, and a soft chime + tiny glow burst.
   const collected = updateGems(gems, ship, dt);
   for (const c of collected) {
-    run.score += c.value * multiplier(run);
-    run.stats.gemsCollected += 1;
-    if (ship.dash.charges < ship.dash.max) {
-      ship.dash.recharge = Math.max(0, ship.dash.recharge - GEMS.dashCredit);
-    }
+    collectGem(c);
     burst(fx, c.x, c.y, '#5fe8ff', 4, rng, 120, true); // tiny glow burst
   }
   if (collected.length > 0) sfxGem();
@@ -253,7 +260,14 @@ function tickPlaying(snap, dt) {
   if (mode === 'playing' && pending.length === 0 && telegraphs.length === 0 && enemies.length === 0) {
     if (ship.shield.owned) ship.shield.up = true; // recharge between waves
     enemyShots = []; // wipe hostile fire on wave clear
-    gems.list = []; // wipe gems — the wave transition is immediate, no upgrade-screen loot
+    // Wave clear is immediate (no loot screen), so VACUUM every remaining field
+    // gem — full score/stat/dash payout each — rather than discarding it. This
+    // guarantees the boss's 6-gem ring (and any stragglers) always pays out.
+    if (gems.list.length > 0) {
+      for (const gem of gems.list) collectGem(gem);
+      sfxGem(); // single chime, not one per gem
+    }
+    gems.list = []; // now wipe — every gem has been collected above
     floaters.list = []; // wipe floaters so the upgrade overlay is clean
     offers = rollOffers(ship, rng);
     mode = 'upgrade';
@@ -501,6 +515,10 @@ function frame(t) {
     if (!handlePaintClick(snap)) { initAudio(); startRun(); }
   }
   else if (mode === 'playing') {
+    // Toggling pause skips tickPlaying for this frame, so ~1 frame of world time
+    // (this dt, already clamped) is dropped per toggle; ~2 across a pause+resume.
+    // Intentional and player-favorable — the world advances slightly less, never
+    // more, than wall-clock across a pause.
     if (snap.pausePressed) mode = 'paused'; // Esc/P freezes the world this frame
     else tickPlaying(snap, dt);
   }
