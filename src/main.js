@@ -81,7 +81,10 @@ function tickPlaying(snap, dt) {
   updateShip(ship, snap, dt, arena);
 
   const shots = updateGun(ship, snap, dt, rng);
-  if (shots.length > 0) sfxShot();
+  if (shots.length > 0) {
+    sfxShot();
+    burst(fx, ship.x + Math.cos(ship.angle) * ship.radius, ship.y + Math.sin(ship.angle) * ship.radius, '#ffd75e', 3, rng, 90);
+  }
   bullets.push(...shots);
   bullets = updateBullets(bullets, dt);
 
@@ -108,6 +111,7 @@ function tickPlaying(snap, dt) {
   for (const e of enemies) {
     if (!e.dead && circleHit(e, ship)) {
       e.dead = true; // enemy explodes on impact, no score
+      enemies.push(...deathSpawns(e));
       burst(fx, e.x, e.y, '#8a879a', 8, rng);
       damagePlayer();
       if (mode !== 'playing') break;
@@ -156,7 +160,7 @@ function render() {
   if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best); return; }
 
   g.save();
-  if (fx.shake > 0) g.translate((rng() - 0.5) * fx.shake, (rng() - 0.5) * fx.shake);
+  if (fx.shake > 0) g.translate((Math.random() - 0.5) * fx.shake, (Math.random() - 0.5) * fx.shake);
 
   for (const tg of telegraphs) {
     const blink = Math.sin(tg.t * 25) > 0;
