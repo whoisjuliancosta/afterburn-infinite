@@ -3,6 +3,7 @@
 // Imports `multiplier` from run.js (the only logic module it may touch) and
 // SPRITES from the browser sprites module.
 import { multiplier } from './run.js';
+import { DASH } from './config.js';
 import { SPRITES } from './sprites.js';
 
 const FONT = 'monospace';
@@ -10,11 +11,6 @@ const INK = '#e8e6d8';
 const DIM = '#8a879a';
 const ACCENT = '#ffd75e';
 const TAU = Math.PI * 2;
-
-// Mirrors config DASH.rechargeTime. config.js is a pure-logic module and this
-// browser module is constrained to import only run.js among logic modules, so
-// the recharge span is duplicated here for the pip progress math.
-const DASH_RECHARGE_TIME = 6;
 
 // Ship-paint palette (spec G): white, red, blue, green, yellow, purple.
 const PAINTS = ['#e8e6d8', '#e0524a', '#5ea8ff', '#63d471', '#ffd75e', '#b07fe8'];
@@ -117,7 +113,7 @@ export function drawHud(g, w, run, ship) {
       const pstep = pipS + pgap;
       const py = margin + heartH + gap;
       const charges = ship.dash.charges;
-      const progress = Math.min(1, Math.max(0, 1 - ship.dash.recharge / DASH_RECHARGE_TIME));
+      const progress = Math.min(1, Math.max(0, 1 - ship.dash.recharge / DASH.rechargeTime));
       for (let i = 0; i < ship.dash.max; i++) {
         const x = rightX - (ship.dash.max - i) * pstep;
         let fill;

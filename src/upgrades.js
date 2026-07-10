@@ -10,7 +10,7 @@ export const UPGRADES = [
   { id: 'aegis',    name: 'Aegis Shield',    desc: 'Blocks 1 hit, recharges',  apply: s => { s.shield.owned = true; s.shield.up = true; } },
   { id: 'deadeye',      name: 'Deadeye',        desc: '+8% crit chance',              apply: s => { s.mods.critChance += 0.08; } },
   { id: 'executioner',  name: 'Executioner',    desc: '+50% crit damage',             apply: s => { s.mods.critMult += 0.5; } },
-  { id: 'extradash',    name: 'Extra Dash',     desc: '+1 dash charge (max 2)',       apply: s => { s.dash.max += 1; s.dash.charges += 1; s.dash.stacks += 1; } },
+  { id: 'extradash',    name: 'Extra Dash',     desc: '+1 dash charge (2 stacks max)',       apply: s => { s.dash.max += 1; s.dash.charges += 1; s.dash.stacks += 1; } },
   { id: 'recovery',     name: 'Quick Recovery', desc: 'Dash recharges 25% faster',    apply: s => { s.mods.dashRate *= 1.25; } },
   { id: 'ricochet',     name: 'Ricochet',       desc: 'Bullets bounce off walls +1',  apply: s => { s.mods.bounce += 1; } },
   { id: 'overclock',    name: 'Overclock',      desc: '+10% fire rate & bullet speed', apply: s => { s.mods.fireRate *= 1.1; s.mods.bulletSpeed *= 1.1; } },

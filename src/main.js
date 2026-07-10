@@ -30,9 +30,15 @@ window.addEventListener('resize', resize);
 resize();
 
 // Ship paint: persisted choice, default white. Guard localStorage (private mode).
+// Whitelist against the 6 spec-G swatches; anything else falls back to white.
+const DEFAULT_PAINT = '#e8e6d8';
+const PAINTS = ['#e8e6d8', '#e0524a', '#5ea8ff', '#63d471', '#ffd75e', '#b07fe8'];
 function loadPaint() {
-  try { return localStorage.getItem('np-shooter-paint') || '#e8e6d8'; }
-  catch { return '#e8e6d8'; }
+  try {
+    const stored = localStorage.getItem('np-shooter-paint');
+    return PAINTS.includes(stored) ? stored : DEFAULT_PAINT;
+  }
+  catch { return DEFAULT_PAINT; }
 }
 let paint = loadPaint();
 initSprites(paint);
@@ -62,6 +68,7 @@ function startRun() {
   floaters = createFloaters();
   offers = [];
   powerLevel = 0;
+  thrusting = false;
   shipTrail = [];
   dashTrailT = 0;
   startWave(1);
@@ -81,7 +88,7 @@ function killEnemy(e) {
   e.dead = true;
   addKill(run, e);
   enemies.push(...deathSpawns(e));
-  burst(fx, e.x, e.y, '#ff9e3e', 14, rng);
+  burst(fx, e.x, e.y, '#ff9e3e', 14, rng, 160, true); // explosion glows
   addShake(fx, 5);
   addPause(fx, 0.03);
   sfxExplosion();
@@ -97,7 +104,7 @@ function killEnemy(e) {
 function damagePlayer() {
   const result = hitPlayer(run, ship);
   if (result === 'iframe') return;
-  burst(fx, ship.x, ship.y, result === 'shield' ? '#5ea8ff' : '#e6743e', 20, rng);
+  burst(fx, ship.x, ship.y, result === 'shield' ? '#5ea8ff' : '#e6743e', 20, rng, 160, true); // player-hit glows
   addShake(fx, result === 'shield' ? 6 : 12);
   sfxHit();
   if (result === 'dead') {
@@ -190,6 +197,7 @@ function tickPlaying(snap, dt) {
   if (mode === 'playing' && pending.length === 0 && telegraphs.length === 0 && enemies.length === 0) {
     if (ship.shield.owned) ship.shield.up = true; // recharge between waves
     enemyShots = []; // wipe hostile fire on wave clear
+    floaters.list = []; // wipe floaters so the upgrade overlay is clean
     offers = rollOffers(ship, rng);
     mode = 'upgrade';
   }
@@ -318,10 +326,18 @@ function render() {
     g.globalAlpha = 1;
   }
 
-  // Explosion/thruster particles composite additively for a glow.
+  // Particles: plain-blend pass first, then additive 'lighter' only for the
+  // glow-tagged explosion/hit particles (muzzle/dash bursts stay non-glow).
   g.save();
+  for (const p of fx.particles) {
+    if (p.glow) continue;
+    g.globalAlpha = clamp(1 - p.t / p.life, 0, 1);
+    g.fillStyle = p.color;
+    g.fillRect(p.x - 2, p.y - 2, 4, 4);
+  }
   g.globalCompositeOperation = 'lighter';
   for (const p of fx.particles) {
+    if (!p.glow) continue;
     g.globalAlpha = clamp(1 - p.t / p.life, 0, 1);
     g.fillStyle = p.color;
     g.fillRect(p.x - 2, p.y - 2, 4, 4);
@@ -369,6 +385,7 @@ function seedDevScreen(which) {
     applyUpgrade(ship, 'deadeye');
     applyUpgrade(ship, 'extradash');
     offers = rollOffers(ship, rng);
+    floaters.list = []; // clean overlay for the dev screenshot
     mode = 'upgrade';
   } else {
     run.score = 12450; run.wave = 9;

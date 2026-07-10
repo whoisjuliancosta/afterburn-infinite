@@ -81,7 +81,7 @@ export function updateEnemy(e, ship, dt, out) {
     e.weaveT += dt;
     // Drifter-style chase plus a perpendicular sine weave.
     const px = -uy, py = ux; // perpendicular to the chase direction
-    const w = def.weaveAmp * def.weaveFreq * Math.cos(e.weaveT * def.weaveFreq * TAU);
+    const w = def.weaveAmp * def.weaveFreq * TAU * Math.cos(e.weaveT * def.weaveFreq * TAU);
     e.vx = ux * e.speed + px * w;
     e.vy = uy * e.speed + py * w;
     e.x += e.vx * dt;

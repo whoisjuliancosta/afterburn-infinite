@@ -5,14 +5,14 @@ export function createFx() {
   return { particles: [], shake: 0, pause: 0 };
 }
 
-export function burst(fx, x, y, color, n, rng, speed = 160) {
+export function burst(fx, x, y, color, n, rng, speed = 160, glow = false) {
   for (let i = 0; i < n; i++) {
     const a = rng() * TAU;
     const s = speed * (0.3 + rng() * 0.7);
     fx.particles.push({
       x, y,
       vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      life: 0.3 + rng() * 0.4, t: 0, color,
+      life: 0.3 + rng() * 0.4, t: 0, color, glow,
     });
   }
 }

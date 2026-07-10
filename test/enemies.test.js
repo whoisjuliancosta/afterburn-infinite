@@ -159,22 +159,27 @@ test('weaver net-approaches the ship despite the weave', () => {
 });
 
 test('weaver deviates perpendicular from the straight chase line', () => {
-  // ship directly to the right; a pure chaser stays on y=300.
+  // ship directly to the right; a pure chaser stays on y=300. The TAU-corrected
+  // weave gives a real positional amplitude ~= weaveAmp (~70px), so within one
+  // weave period the enemy should swing well clear of the chase line.
+  const def = ENEMIES.weaver;
   const e = spawnEnemy('weaver', 0, 300, 1);
+  const step = 1 / 60;
+  const period = 1 / def.weaveFreq; // seconds for one full weave
   let maxDev = 0;
-  for (let i = 0; i < 120; i++) {
-    updateEnemy(e, ship, 1 / 60, []);
+  for (let t = 0; t < period; t += step) {
+    updateEnemy(e, ship, step, []);
     maxDev = Math.max(maxDev, Math.abs(e.y - 300));
   }
-  assert.ok(maxDev > 10, `weave should push off the chase line, got ${maxDev}`);
+  assert.ok(maxDev > 35, `weave should push >35px off the chase line, got ${maxDev}`);
 });
 
-test('weaver velocity carries a perpendicular sine term of expected amplitude', () => {
+test('weaver velocity carries the TAU-corrected perpendicular sine term', () => {
   const def = ENEMIES.weaver;
   const e = spawnEnemy('weaver', 0, 300, 1); // ship to the right → chase is +x, perp is y
   updateEnemy(e, ship, 1 / 60, []);
-  // at small t, cos(t*freq*TAU) ~ 1 → vy ~ weaveAmp*weaveFreq
-  const expected = def.weaveAmp * def.weaveFreq * Math.cos(e.weaveT * def.weaveFreq * TAU);
+  // perpendicular weave velocity = weaveAmp * weaveFreq * TAU * cos(t*freq*TAU)
+  const expected = def.weaveAmp * def.weaveFreq * TAU * Math.cos(e.weaveT * def.weaveFreq * TAU);
   assert.ok(Math.abs(e.vy - expected) < 1e-6, `vy=${e.vy} expected~${expected}`);
 });
 

@@ -35,7 +35,7 @@ export const ENEMIES = {
   orbiter:  { cost: 3, hp: 3, speed: 120, radius: 14, score: 200, unlock: 5,
               orbitRadius: 240, spiralRate: 12 },
   weaver:   { cost: 3, hp: 2, speed: 95,  radius: 13, score: 225, unlock: 7,
-              weaveAmp: 90, weaveFreq: 2.2 },
+              weaveAmp: 70, weaveFreq: 0.9 },
 };
 
 export const WAVE = {

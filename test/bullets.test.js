@@ -34,8 +34,8 @@ test('a bounces>0 bullet reflects off an arena edge, clamps inside, decrements',
   bs = updateBullets(bs, 0.25, arena);
   assert.equal(bs.length, 1);
   const b = bs[0];
-  assert.ok(b.x >= 0); // clamped back inside
-  assert.equal(b.x, 0); // clamped to the edge
+  assert.ok(b.x >= b.radius); // clamped back inside
+  assert.equal(b.x, b.radius); // clamped to one radius off the edge
   assert.equal(b.vx, 100); // x-velocity flipped
   assert.equal(b.vy, 0); // y untouched
   assert.equal(b.bounces, 1); // one bounce spent
@@ -46,8 +46,8 @@ test('reflection off the right and bottom edges flips the correct component', ()
   let bs = [bullet({ x: 95, y: 95, vx: 100, vy: 100, bounces: 1, range: 1000, radius: 4 })];
   bs = updateBullets(bs, 0.2, arena); // would go to (115,115)
   const b = bs[0];
-  assert.equal(b.x, 100); // clamped to right edge
-  assert.equal(b.y, 100); // clamped to bottom edge
+  assert.equal(b.x, 96); // clamped one radius (4) off the right edge (100-4)
+  assert.equal(b.y, 96); // clamped one radius off the bottom edge
   assert.equal(b.vx, -100);
   assert.equal(b.vy, -100);
   assert.equal(b.bounces, 0); // decremented once even though two edges crossed

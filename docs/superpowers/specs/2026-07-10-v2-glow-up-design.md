@@ -28,7 +28,7 @@ All v1 rules stay unless amended here. Global constraints unchanged: vanilla JS,
 |---|---|---|---|---|
 | Spitter | 2 | wave 3 | Keeps `standoff` ~320px from ship, strafes slowly, fires an aimed projectile every `fireEvery` 2.2s | 2 / 55 / 16 / 175 |
 | Orbiter | 3 | wave 5 | Circles the ship at ~240px (tangential + radial correction), spirals in 12px/s | 3 / 120 / 14 / 200 |
-| Weaver | 3 | wave 7 | Chases like drifter but overlays a perpendicular sine weave (amp ~90px, freq ~2.2Hz, per-enemy phase) — hard to hit | 2 / 95 / 13 / 225 |
+| Weaver | 3 | wave 7 | Chases like drifter but overlays a perpendicular sine weave (positional amp ~70px, freq 0.9Hz, per-enemy phase) — hard to hit. Lateral velocity term is TAU-corrected: `weaveAmp * weaveFreq * TAU * cos(t * weaveFreq * TAU)` (peak lateral ~396 px/s) | 2 / 95 / 13 / 225 |
 
 - **Enemy projectiles:** `updateEnemy(e, ship, dt)` gains an optional 4th param `out` (array); spitter pushes `{ x, y, vx, vy, radius: 5, dead: false }` aimed at the ship, speed 200. Main keeps `enemyShots[]`, moves them (cull off-arena), collides vs ship with `circleHit` → `hitPlayer` path. Enemy shots are wiped on wave clear and on player death.
 - Existing enemies keep behavior; all enemy base stats get the size bump (E).

@@ -14,10 +14,10 @@ export function updateBullets(bullets, dt, arena) {
 
     if (arena && b.bounces > 0) {
       let bounced = false;
-      if (b.x < 0)             { b.x = 0;        b.vx = Math.abs(b.vx);  bounced = true; }
-      else if (b.x > arena.w)  { b.x = arena.w;  b.vx = -Math.abs(b.vx); bounced = true; }
-      if (b.y < 0)             { b.y = 0;        b.vy = Math.abs(b.vy);  bounced = true; }
-      else if (b.y > arena.h)  { b.y = arena.h;  b.vy = -Math.abs(b.vy); bounced = true; }
+      if (b.x < b.radius)               { b.x = b.radius;            b.vx = Math.abs(b.vx);  bounced = true; }
+      else if (b.x > arena.w - b.radius) { b.x = arena.w - b.radius;  b.vx = -Math.abs(b.vx); bounced = true; }
+      if (b.y < b.radius)               { b.y = b.radius;            b.vy = Math.abs(b.vy);  bounced = true; }
+      else if (b.y > arena.h - b.radius) { b.y = arena.h - b.radius;  b.vy = -Math.abs(b.vy); bounced = true; }
       if (bounced) b.bounces -= 1;
     }
   }
