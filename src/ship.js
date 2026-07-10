@@ -1,5 +1,5 @@
 // src/ship.js
-import { SHIP, GUN } from './config.js';
+import { SHIP, GUN, DASH } from './config.js';
 import { TAU, angleDiff } from './utils.js';
 
 export function createShip(x, y) {
@@ -11,7 +11,35 @@ export function createShip(x, y) {
     iframes: 0, cooldown: 0,
     mods: { fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1 },
     shield: { owned: false, up: false },
+    dash: { charges: DASH.charges, max: DASH.charges, recharge: 0, stacks: 0 },
   };
+}
+
+// Consume a dash charge: impulse along the nose, clamp to the dash speed cap,
+// grant iframes (never shortening a longer window), start the recharge if idle.
+export function tryDash(ship) {
+  if (ship.dash.charges <= 0) return false;
+  ship.dash.charges -= 1;
+
+  ship.vx += Math.cos(ship.angle) * DASH.impulse;
+  ship.vy += Math.sin(ship.angle) * DASH.impulse;
+  const cap = SHIP.maxSpeed * ship.mods.engine * DASH.speedCapMult;
+  const sp = Math.hypot(ship.vx, ship.vy);
+  if (sp > cap) { ship.vx *= cap / sp; ship.vy *= cap / sp; }
+
+  ship.iframes = Math.max(ship.iframes, DASH.iframes);
+
+  // start a recharge cycle only if one isn't already running
+  if (ship.dash.charges < ship.dash.max && ship.dash.recharge <= 0) {
+    ship.dash.recharge = DASH.rechargeTime;
+  }
+  return true;
+}
+
+// Every point of dealt damage shaves the active recharge timer (no-op at full).
+export function creditDash(ship, damage) {
+  if (ship.dash.charges >= ship.dash.max) return;
+  ship.dash.recharge = Math.max(0, ship.dash.recharge - DASH.damageCredit * damage);
 }
 
 export function updateShip(ship, input, dt, arena) {
@@ -50,6 +78,17 @@ export function updateShip(ship, input, dt, arena) {
 
   ship.iframes = Math.max(0, ship.iframes - dt);
   ship.cooldown = Math.max(0, ship.cooldown - dt);
+
+  // Recharge ticking: only while below max. tryDash starts the cycle; here we
+  // count down (scaled by dashRate) and grant a charge on reaching 0, restarting
+  // the timer when there's still a charge left to earn.
+  if (ship.dash.charges < ship.dash.max) {
+    ship.dash.recharge -= dt * (ship.mods.dashRate || 1);
+    if (ship.dash.recharge <= 0) {
+      ship.dash.charges += 1;
+      ship.dash.recharge = ship.dash.charges < ship.dash.max ? DASH.rechargeTime : 0;
+    }
+  }
 }
 
 export function updateGun(ship, input, dt, rng) {
