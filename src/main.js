@@ -1,18 +1,20 @@
 // src/main.js
-import { WAVE, CRIT } from './config.js';
+import { WAVE, CRIT, GEMS } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
 import { createShip, updateShip, updateGun, tryDash, creditDash } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
 import { spawnEnemy, updateEnemy, deathSpawns } from './enemies.js';
 import { buildWave, scheduleWave } from './waves.js';
 import { createRun, addKill, hitPlayer, multiplier } from './run.js';
+import { createGems, spawnGem, spawnGemRing, updateGems, gemBlinking } from './gems.js';
+import { loadBoard, recordRun, saveBoard, placed } from './board.js';
 import { rollOffers, applyUpgrade } from './upgrades.js';
 import { createFloaters, addFloater, updateFloaters } from './floaters.js';
 import { initSprites, SPRITES } from './sprites.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
-import { initAudio, sfxShot, sfxDash, sfxExplosion, sfxHit, sfxChime, sfxWave } from './audio.js';
-import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects } from './hud.js';
+import { initAudio, sfxShot, sfxDash, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
+import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause } from './hud.js';
 import { createInput } from './input.js';
 
 const canvas = document.getElementById('game');
@@ -46,10 +48,12 @@ initSprites(paint);
 const input = createInput(canvas);
 const rng = makeRng(Date.now());
 
-let mode = 'menu'; // 'menu' | 'playing' | 'upgrade' | 'gameover'
+let mode = 'menu'; // 'menu' | 'playing' | 'paused' | 'upgrade' | 'gameover'
 let best = loadBest();
+let board = loadBoard();  // local leaderboard, top 5
+let placedIdx = -1;       // where the just-finished run placed on the board (-1 = didn't)
 let clock = 0; // global animation clock (sprite frames, previews, floaters)
-let run, ship, bullets, enemies, enemyShots, telegraphs, pending, waveT, fx, floaters, offers;
+let run, ship, bullets, enemies, enemyShots, telegraphs, pending, waveT, fx, floaters, gems, offers;
 let powerLevel;         // upgrades taken this run (feeds wave budget)
 let thrusting = false;  // last-frame thrust state, for the engine flame
 let shipTrail = [];     // recent {x, y, angle} for the dash afterimage
@@ -66,7 +70,9 @@ function startRun() {
   telegraphs = [];
   fx = createFx();
   floaters = createFloaters();
+  gems = createGems();
   offers = [];
+  placedIdx = -1;
   powerLevel = 0;
   thrusting = false;
   shipTrail = [];
@@ -88,10 +94,26 @@ function killEnemy(e) {
   e.dead = true;
   addKill(run, e);
   enemies.push(...deathSpawns(e));
-  burst(fx, e.x, e.y, '#ff9e3e', 14, rng, 160, true); // explosion glows
-  addShake(fx, 5);
-  addPause(fx, 0.03);
-  sfxExplosion();
+
+  // Gem value: spec formula, floor 10. Bosses always drop a 6-gem ring; other
+  // enemies roll GEMS.dropChance for a single scattered gem.
+  const gemValue = Math.max(10, Math.round(e.score / 8));
+  if (e.type === 'boss') {
+    spawnGemRing(gems, e.x, e.y, gemValue, 6, rng);
+    ship.hp = Math.min(ship.maxHp, ship.hp + 1);       // heal 1 heart (capped)
+    ship.dash.charges = ship.dash.max;                 // instant full dash recharge
+    ship.dash.recharge = 0;                            // recharge idle
+    burst(fx, e.x, e.y, '#ff9e3e', 42, rng, 260, true); // bigger explosion
+    addShake(fx, 16);
+    addPause(fx, 0.05);
+    sfxBossDown();
+  } else {
+    if (rng() < GEMS.dropChance) spawnGem(gems, e.x, e.y, gemValue, rng);
+    burst(fx, e.x, e.y, '#ff9e3e', 14, rng, 160, true); // explosion glows
+    addShake(fx, 5);
+    addPause(fx, 0.03);
+    sfxExplosion();
+  }
 
   // Combo popups at every 5th kill; flavor words at 10/20/30.
   if (run.streak > 0 && run.streak % 5 === 0) {
@@ -110,17 +132,24 @@ function damagePlayer() {
   if (result === 'dead') {
     enemyShots = []; // clear hostile fire on death
     if (run.score > best) { best = run.score; saveBest(best); }
+    // Record on the local leaderboard (main is the composition root → owns the clock).
+    const entry = { score: run.score, wave: run.wave, date: new Date().toISOString().slice(0, 10) };
+    board = recordRun(board, entry);
+    saveBoard(board);
+    placedIdx = placed(board, entry);
     mode = 'gameover';
   }
 }
 
 function tickPlaying(snap, dt) {
+  run.stats.runTime += dt; // unpaused seconds (paused ticks never reach here)
   updateFloaters(floaters, dt);
   updateFx(fx, dt);
   if (fx.pause > 0) return; // hit-pause freezes the world, not the fx
 
   // Dash: edge-triggered impulse + iframes, with burst, SFX and afterimage.
   if (snap.dashPressed && tryDash(ship)) {
+    run.stats.dashes += 1;
     sfxDash();
     burst(fx, ship.x - Math.cos(ship.angle) * ship.radius,
               ship.y - Math.sin(ship.angle) * ship.radius, '#3ecfe6', 14, rng, 240);
@@ -132,6 +161,7 @@ function tickPlaying(snap, dt) {
 
   const shots = updateGun(ship, snap, dt, rng);
   if (shots.length > 0) {
+    run.stats.shotsFired += shots.length;
     sfxShot();
     burst(fx, ship.x + Math.cos(ship.angle) * ship.radius, ship.y + Math.sin(ship.angle) * ship.radius, '#ffd75e', 3, rng, 90);
   }
@@ -150,7 +180,15 @@ function tickPlaying(snap, dt) {
   }
   telegraphs = telegraphs.filter(tg => tg.t > 0);
 
-  for (const e of enemies) updateEnemy(e, ship, dt, enemyShots);
+  // updateEnemy pushes to a shared `out`: hostile shots (have vx) plus boss mini
+  // markers ({spawn:'mini'}). Partition them — shots join the field, markers spawn
+  // minis at the marker position with the current wave (they count toward clear).
+  const out = [];
+  for (const e of enemies) updateEnemy(e, ship, dt, out);
+  for (const o of out) {
+    if (o.spawn) enemies.push(spawnEnemy(o.spawn, o.x, o.y, run.wave));
+    else enemyShots.push(o);
+  }
 
   // Enemy shots: fly straight, cull off-arena, collide with the ship.
   for (const s of enemyShots) {
@@ -166,6 +204,7 @@ function tickPlaying(snap, dt) {
   // feeds the dash recharge credit.
   const crit = { chance: CRIT.chance + ship.mods.critChance, mult: CRIT.mult + ship.mods.critMult };
   const hits = collideBullets(bullets, enemies, rng, crit);
+  run.stats.shotsHit += hits.length;
   let dealt = 0;
   for (const h of hits) {
     dealt += h.dealt;
@@ -189,6 +228,19 @@ function tickPlaying(snap, dt) {
   }
   enemies = enemies.filter(e => !e.dead);
 
+  // Gems: move/magnetise/age; collect → score (×multiplier), stat, a shave off the
+  // active dash recharge, and a soft chime + tiny glow burst.
+  const collected = updateGems(gems, ship, dt);
+  for (const c of collected) {
+    run.score += c.value * multiplier(run);
+    run.stats.gemsCollected += 1;
+    if (ship.dash.charges < ship.dash.max) {
+      ship.dash.recharge = Math.max(0, ship.dash.recharge - GEMS.dashCredit);
+    }
+    burst(fx, c.x, c.y, '#5fe8ff', 4, rng, 120, true); // tiny glow burst
+  }
+  if (collected.length > 0) sfxGem();
+
   // Record the afterimage trail (last few ship poses) while the dash is fresh.
   dashTrailT = Math.max(0, dashTrailT - dt);
   shipTrail.unshift({ x: ship.x, y: ship.y, angle: ship.angle });
@@ -197,6 +249,7 @@ function tickPlaying(snap, dt) {
   if (mode === 'playing' && pending.length === 0 && telegraphs.length === 0 && enemies.length === 0) {
     if (ship.shield.owned) ship.shield.up = true; // recharge between waves
     enemyShots = []; // wipe hostile fire on wave clear
+    gems.list = []; // wipe gems — the wave transition is immediate, no upgrade-screen loot
     floaters.list = []; // wipe floaters so the upgrade overlay is clean
     offers = rollOffers(ship, rng);
     mode = 'upgrade';
@@ -255,7 +308,7 @@ function render() {
   g.fillRect(0, 0, canvas.width, canvas.height);
   drawStarfield(g, starfield); // parallax stars behind everything
 
-  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint); return; }
+  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board); return; }
 
   g.save();
   if (fx.shake > 0) g.translate((Math.random() - 0.5) * fx.shake, (Math.random() - 0.5) * fx.shake);
@@ -288,12 +341,25 @@ function render() {
   }
   g.restore();
 
+  // Gems: soft cyan glow; blink (skip alternate frames) during the last 1.5s.
+  if (gems && gems.list.length && SPRITES.gem) {
+    g.save();
+    g.shadowBlur = 8;
+    g.shadowColor = '#5fe8ff';
+    for (const gem of gems.list) {
+      if (gemBlinking(gem) && Math.sin(clock * 18) < 0) continue;
+      drawFrame(SPRITES.gem, gem.x, gem.y);
+    }
+    g.restore();
+  }
+
   for (const e of enemies) {
     const spr = SPRITES[e.type];
     let angle = 0;
     if (e.type === 'darter' || e.type === 'weaver') angle = Math.atan2(e.vy, e.vx);
     else if (e.type === 'spitter') angle = Math.atan2(ship.y - e.y, ship.x - e.x);
-    const flash = e.type === 'darter' && e.state === 'aim' && Math.sin(e.timer * 30) > 0;
+    const flash = (e.type === 'darter' && e.state === 'aim' && Math.sin(e.timer * 30) > 0)
+               || (e.type === 'boss' && e.state === 'windup' && Math.sin(clock * 30) > 0);
     if (flash) {
       g.save();
       g.globalAlpha = 0.5;
@@ -349,8 +415,11 @@ function render() {
   g.restore();
 
   drawHud(g, arena.w, run, ship);
+  const boss = enemies.find(e => e.type === 'boss');
+  if (boss) drawBossBar(g, arena.w, boss); // only while a boss is alive
+  if (mode === 'paused') drawPause(g, arena.w, arena.h);
   if (mode === 'upgrade') drawOffers(g, arena.w, arena.h, offers, clock);
-  if (mode === 'gameover') drawGameOver(g, arena.w, arena.h, run, best, paint);
+  if (mode === 'gameover') drawGameOver(g, arena.w, arena.h, run, best, paint, board, placedIdx);
 }
 
 function renderFloaters() {
@@ -387,8 +456,30 @@ function seedDevScreen(which) {
     offers = rollOffers(ship, rng);
     floaters.list = []; // clean overlay for the dev screenshot
     mode = 'upgrade';
+  } else if (which === 'boss') {
+    // Wave 5 mid-fight: boss at ~55% HP upper-center, escort drifters, gems on
+    // the field, HP bar visible.
+    run.wave = 5; run.score = 8600; run.streak = 4; powerLevel = 3;
+    pending = []; telegraphs = []; enemies = []; enemyShots = [];
+    const boss = spawnEnemy('boss', arena.w / 2, arena.h * 0.3, 5);
+    boss.hp = Math.round(boss.maxHp * 0.55);
+    enemies.push(boss);
+    enemies.push(spawnEnemy('drifter', arena.w * 0.3, arena.h * 0.55, 5));
+    enemies.push(spawnEnemy('drifter', arena.w * 0.7, arena.h * 0.5, 5));
+    spawnGemRing(gems, arena.w / 2, arena.h * 0.52, 40, 6, rng);
+    spawnGem(gems, arena.w * 0.42, arena.h * 0.62, 30, rng);
+    spawnGem(gems, arena.w * 0.6, arena.h * 0.66, 30, rng);
+    floaters.list = [];
+    mode = 'playing';
   } else {
     run.score = 12450; run.wave = 9;
+    // Seed a board so the game-over leaderboard + placed highlight render.
+    const entry = { score: run.score, wave: run.wave, date: '2026-07-10' };
+    board = recordRun(
+      [{ score: 18400, wave: 12, date: '2026-07-08' }, { score: 9200, wave: 7, date: '2026-07-09' }],
+      entry,
+    );
+    placedIdx = placed(board, entry);
     mode = 'gameover';
   }
 }
@@ -404,7 +495,13 @@ function frame(t) {
   if (mode === 'menu' && snap.clicked) {
     if (!handlePaintClick(snap)) { initAudio(); startRun(); }
   }
-  else if (mode === 'playing') tickPlaying(snap, dt);
+  else if (mode === 'playing') {
+    if (snap.pausePressed) mode = 'paused'; // Esc/P freezes the world this frame
+    else tickPlaying(snap, dt);
+  }
+  else if (mode === 'paused') {
+    if (snap.pausePressed) mode = 'playing'; // resume; runTime excludes paused frames
+  }
   else if (mode === 'upgrade') tickUpgrade(snap);
   else if (mode === 'gameover') {
     if (snap.clicked) { if (!handlePaintClick(snap)) startRun(); }
@@ -416,5 +513,5 @@ function frame(t) {
 }
 
 const devScreen = new URLSearchParams(location.search).get('screen');
-if (devScreen === 'upgrade' || devScreen === 'gameover') seedDevScreen(devScreen);
+if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss') seedDevScreen(devScreen);
 requestAnimationFrame(frame);

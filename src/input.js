@@ -10,10 +10,13 @@ export function createInput(canvas) {
   });
 
   let dashPending = false;
+  let pausePending = false;
 
   window.addEventListener('keydown', e => {
     // edge-triggered dash: latch only on the first press, key repeat must not re-fire
     if (e.code === 'Space' && !e.repeat) dashPending = true;
+    // edge-triggered pause: Esc or P, same latch pattern as dash
+    if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) pausePending = true;
     down.add(e.code);
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   });
@@ -44,10 +47,12 @@ export function createInput(canvas) {
         key1: down.has('Digit1'), key2: down.has('Digit2'), key3: down.has('Digit3'),
         keyR: down.has('KeyR'),
         dashPressed: dashPending,
+        pausePressed: pausePending,
       };
       taps = 0;
       clicked = false;
       dashPending = false;
+      pausePending = false;
       return snap;
     },
   };
