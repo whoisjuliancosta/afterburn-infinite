@@ -424,7 +424,7 @@ function render() {
     if (ASSETS.thrust.length) {
       const fr = ASSETS.thrust[Math.floor(clock * 14) % ASSETS.thrust.length];
       const off = ship.radius * 1.2;
-      drawScaled(fr, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle, ship.radius * 2.2);
+      if (fr) drawScaled(fr, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle, ship.radius * 2.2);
     } else if (SPRITES.flame) {
       const off = ship.radius * 0.8;
       drawFrame(SPRITES.flame, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle);
