@@ -219,9 +219,13 @@ function tickPlaying(snap, dt) {
 
   for (const e of enemies) {
     if (!e.dead && circleHit(e, ship)) {
-      e.dead = true; // enemy explodes on impact, no score
-      enemies.push(...deathSpawns(e));
-      burst(fx, e.x, e.y, '#8a879a', 8, rng);
+      // Bosses damage the player on contact but never die from it: they can only
+      // be killed through the bullet/hp<=0 path, which grants the kill reward.
+      if (e.type !== 'boss') {
+        e.dead = true; // enemy explodes on impact, no score
+        enemies.push(...deathSpawns(e));
+        burst(fx, e.x, e.y, '#8a879a', 8, rng);
+      }
       damagePlayer();
       if (mode !== 'playing') break;
     }
