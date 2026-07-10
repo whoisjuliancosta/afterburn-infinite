@@ -1,6 +1,11 @@
 // src/particles.js
 import { TAU } from './utils.js';
 
+// Hard cap on live particles (v5.1 perf): a screen-filling frame can request
+// far more bursts than the GPU wants to fill. Beyond this, burst() evicts the
+// oldest particles (they're already the most faded) so cost stays bounded.
+export const MAX_PARTICLES = 320;
+
 export function createFx() {
   return { particles: [], shake: 0, pause: 0 };
 }
@@ -15,6 +20,9 @@ export function burst(fx, x, y, color, n, rng, speed = 160, glow = false) {
       life: 0.3 + rng() * 0.4, t: 0, color, glow,
     });
   }
+  // Drop the oldest overflow so the live count never exceeds the cap.
+  const over = fx.particles.length - MAX_PARTICLES;
+  if (over > 0) fx.particles.splice(0, over);
 }
 
 export function addShake(fx, mag) {
