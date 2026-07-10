@@ -317,10 +317,10 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
   g.textBaseline = 'middle';
   g.fillStyle = INK;
   g.font = `bold 42px ${FONT}`;
-  g.fillText('UNTITLED SPACE SHOOTER', w / 2, h * 0.28);
+  g.fillText('AFTERBURN INFINITE', w / 2, h * 0.28);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('W thrust · aim with mouse · hold SPACE boost · right-click rocket', w / 2, h * 0.42);
+  g.fillText('W thrust · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
   if (best > 0) {
     g.fillStyle = ACCENT;
@@ -705,6 +705,91 @@ function previewHeavy(g, r, t) {
   dot(g, '#c2452e', x, cy, rr * 0.5);
 }
 
+// Big Payload: a warhead crossing, then a wide expanding blast ring.
+function previewBigPayload(g, r, t) {
+  const cy = r.y + r.h / 2;
+  const cyc = t % 1.4;
+  if (cyc < 0.7) {
+    const x = r.x + 4 + (cyc / 0.7) * (r.w * 0.5);
+    dot(g, '#e0524a', x, cy, Math.max(2, r.h * 0.12));
+  } else {
+    const s = (cyc - 0.7) / 0.7;
+    const rad = s * Math.min(r.w, r.h) * 0.55;
+    g.globalAlpha = 1 - s;
+    g.strokeStyle = '#ff9e3e';
+    g.lineWidth = Math.max(1.5, r.h * 0.08);
+    g.beginPath(); g.arc(r.x + r.w * 0.55, cy, rad, 0, TAU); g.stroke();
+    g.globalAlpha = 1;
+  }
+}
+
+// Fast Reload: a cooldown bar that refills quickly and pops a rocket each cycle.
+function previewFastReload(g, r, t) {
+  const cy = r.y + r.h / 2;
+  const p = (t * 1.6) % 1;            // fast refill
+  const barW = r.w - 10;
+  g.fillStyle = '#2a2836';
+  g.fillRect(r.x + 5, cy - r.h * 0.08, barW, r.h * 0.16);
+  g.fillStyle = '#3ecfe6';
+  g.fillRect(r.x + 5, cy - r.h * 0.08, barW * p, r.h * 0.16);
+  if (p > 0.92) dot(g, '#ff9e3e', r.x + 5 + barW, cy, Math.max(2, r.h * 0.13)); // ready flash
+}
+
+// Efficient Burners: a slow, steady cyan plume sipping fuel (economical).
+function previewBurners(g, r, t) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  const flick = 0.85 + Math.sin(t * 6) * 0.15;
+  g.fillStyle = '#3ecfe6';
+  g.beginPath();
+  g.moveTo(cx, cy - r.h * 0.3);
+  g.lineTo(cx + r.w * 0.12, cy + r.h * 0.28 * flick);
+  g.lineTo(cx - r.w * 0.12, cy + r.h * 0.28 * flick);
+  g.closePath(); g.fill();
+  g.globalAlpha = 0.8;
+  dot(g, '#eaffff', cx, cy - r.h * 0.05, Math.max(1.5, r.h * 0.08));
+  g.globalAlpha = 1;
+}
+
+// Lucky Charm: gems raining down, an occasional gold one.
+function previewLucky(g, r, t) {
+  for (let k = 0; k < 6; k++) {
+    const p = (t * 0.7 + k / 6) % 1;
+    const x = r.x + (k + 0.5) * r.w / 6 + Math.sin(t + k) * r.w * 0.03;
+    const y = r.y + p * r.h;
+    const gold = (k % 3 === 0);
+    g.globalAlpha = 0.5 + 0.5 * Math.sin(p * Math.PI);
+    dot(g, gold ? '#ffd75e' : '#5fe8ff', x, y, Math.max(1.5, r.h * (gold ? 0.09 : 0.07)));
+  }
+  g.globalAlpha = 1;
+}
+
+// Rear Guard: a centered ship firing forward and one bolt straight backward.
+function previewRearGuard(g, r, t) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  g.fillStyle = '#c8c8d0';                 // ship pointing right
+  g.beginPath();
+  g.moveTo(cx + r.w * 0.06, cy); g.lineTo(cx - r.w * 0.06, cy - r.h * 0.18);
+  g.lineTo(cx - r.w * 0.02, cy); g.lineTo(cx - r.w * 0.06, cy + r.h * 0.18);
+  g.closePath(); g.fill();
+  const p = (t * 1.4) % 1;
+  dot(g, '#ffd75e', cx + r.w * 0.08 + p * r.w * 0.4, cy, Math.max(1.5, r.h * 0.07));   // forward
+  dot(g, '#ffd75e', cx - r.w * 0.08 - p * r.w * 0.4, cy, Math.max(1.5, r.h * 0.07));   // backward
+}
+
+// Adrenaline: a heart flashing faster as a bolt pulses (low-HP surge).
+function previewAdrenaline(g, r, t) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  const pulse = 0.8 + Math.abs(Math.sin(t * 6)) * 0.25;
+  dot(g, '#e0524a', cx, cy, Math.min(r.w, r.h) * 0.28 * pulse);
+  g.fillStyle = '#ffd75e';
+  g.beginPath();
+  const s = Math.min(r.w, r.h) * 0.06;
+  g.moveTo(cx + s, cy - 3 * s); g.lineTo(cx - s, cy);
+  g.lineTo(cx + 0.3 * s, cy); g.lineTo(cx - s, cy + 3 * s);
+  g.lineTo(cx + 1.6 * s, cy - 0.5 * s); g.lineTo(cx, cy - 0.5 * s);
+  g.closePath(); g.fill();
+}
+
 function previewDefault(g, r, t) {
   const rr = Math.min(r.w, r.h) * 0.2 * (1 + Math.sin(t * 3) * 0.15);
   dot(g, ACCENT, r.x + r.w / 2, r.y + r.h / 2, rr);
@@ -726,4 +811,10 @@ const PREVIEWS = {
   pierce: previewPierce,
   rapid: previewRapid,
   heavy: previewHeavy,
+  bigpayload: previewBigPayload,
+  fastreload: previewFastReload,
+  burners: previewBurners,
+  lucky: previewLucky,
+  rearguard: previewRearGuard,
+  adrenaline: previewAdrenaline,
 };

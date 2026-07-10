@@ -60,11 +60,16 @@ export function spawnGemRing(g, x, y, value, n, rng, kind = 'blue') {
 // Roll a per-kill gem drop. One mutually-exclusive draw partitions [0,1):
 // [0, blueChance) → 'blue', the adjacent band → 'red' (doubled for isBig
 // splitter/boss-class kills), the rest → null. rng is injected for determinism.
-export function rollDrop(rng, isBig = false) {
+//
+// luck (Lucky Charm, v5.1) scales both chances by ×luck. Each band is clamped
+// after scaling so drop rates can't run away: blue ≤ 0.6, red ≤ 0.2 (the red
+// clamp applies to the effective, isBig-doubled band).
+export function rollDrop(rng, isBig = false, luck = 1) {
   const r = rng();
-  if (r < GEMS.blueChance) return 'blue';
-  const redChance = GEMS.redChance * (isBig ? 2 : 1);
-  if (r < GEMS.blueChance + redChance) return 'red';
+  const blueChance = Math.min(0.6, GEMS.blueChance * luck);
+  if (r < blueChance) return 'blue';
+  const redChance = Math.min(0.2, GEMS.redChance * (isBig ? 2 : 1) * luck);
+  if (r < blueChance + redChance) return 'red';
   return null;
 }
 

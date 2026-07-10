@@ -16,6 +16,9 @@ export function createShip(x, y) {
     mods: {
       fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
       critChance: 0, critMult: 0, magnet: 1, bounce: 0,
+      // v5.1 upgrades: rocket AoE / reload multipliers, boost-drain multiplier,
+      // gem-drop luck multiplier, rear-guard bullet flag, adrenaline flag.
+      rocketAoe: 1, rocketReload: 1, boostDrain: 1, luck: 1, rear: 0, adrenaline: 0,
     },
     shield: { owned: false, up: false },
   };
@@ -47,7 +50,7 @@ export function updateShip(ship, input, dt, arena) {
   ship.boosting = false;
   let capMult = 1;
   if (input.boosting && ship.boost.meter > 0) {
-    ship.boost.meter = Math.max(0, ship.boost.meter - BOOST.drainPerSec * dt);
+    ship.boost.meter = Math.max(0, ship.boost.meter - BOOST.drainPerSec * (ship.mods.boostDrain ?? 1) * dt);
     ship.vx += cos * a * BOOST.thrustMult * dt;
     ship.vy += sin * a * BOOST.thrustMult * dt;
     capMult = BOOST.speedMult;
@@ -58,7 +61,9 @@ export function updateShip(ship, input, dt, arena) {
   ship.vx *= damp;
   ship.vy *= damp;
 
-  const max = SHIP.maxSpeed * ship.mods.engine * capMult;
+  // Adrenaline: while below half HP, +10% max speed (dynamic, not CAPS-clamped).
+  const adr = adrenalineActive(ship) ? 1.10 : 1;
+  const max = SHIP.maxSpeed * ship.mods.engine * capMult * adr;
   const sp = Math.hypot(ship.vx, ship.vy);
   if (sp > max) { ship.vx *= max / sp; ship.vy *= max / sp; }
 
@@ -75,9 +80,19 @@ export function updateShip(ship, input, dt, arena) {
   ship.cooldown = Math.max(0, ship.cooldown - dt);
 }
 
+// Adrenaline is active while the ship owns the mod and sits strictly below half
+// HP. At exactly half (hp/maxHp === 0.5) it stays OFF. Situational, so it's a
+// dynamic multiplier applied at read time — never stored in mods, never clamped
+// by CAPS.
+export function adrenalineActive(ship) {
+  return !!ship.mods.adrenaline && ship.hp / ship.maxHp < 0.5;
+}
+
 export function updateGun(ship, input, dt, rng) {
   if (ship.cooldown > 0) return [];
-  const autoInt = GUN.autoInterval / ship.mods.fireRate;
+  // Adrenaline: while below half HP, +15% fire rate (shorter auto interval).
+  const adr = adrenalineActive(ship) ? 1.15 : 1;
+  const autoInt = GUN.autoInterval / (ship.mods.fireRate * adr);
   if (input.taps > 0) {
     ship.cooldown = autoInt * GUN.semiFloor;
     return fire(ship, 0, rng, false);
@@ -98,6 +113,10 @@ function fire(ship, jitter, rng, withSpread) {
   if (withSpread) {
     for (let i = 1; i <= ship.mods.spread; i++) {
       angles.push(ship.angle + GUN.spreadShotAngle * i, ship.angle - GUN.spreadShotAngle * i);
+    }
+    // Rear Guard: one extra bullet straight backward, on held auto-fire only.
+    for (let i = 0; i < (ship.mods.rear || 0); i++) {
+      angles.push(ship.angle + Math.PI + GUN.spreadShotAngle * (i - (ship.mods.rear - 1) / 2));
     }
   }
 

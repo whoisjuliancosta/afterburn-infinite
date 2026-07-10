@@ -229,6 +229,39 @@ test('rollDrop: seeded-rng distribution is mutually exclusive and roughly on tar
   assert.ok(Math.abs(red / N - GEMS.redChance) < 0.02, `red rate ${red / N}`);
 });
 
+test('rollDrop: luck scales blue and red bands ×luck', () => {
+  const luck = 1.3;
+  // blue band widens to blueChance*luck
+  assert.equal(rollDrop(() => GEMS.blueChance * luck - 1e-9, false, luck), 'blue');
+  assert.equal(rollDrop(() => GEMS.blueChance * luck, false, luck), 'red');
+  // red band widens too
+  const redEnd = GEMS.blueChance * luck + GEMS.redChance * luck;
+  assert.equal(rollDrop(() => redEnd - 1e-9, false, luck), 'red');
+  assert.equal(rollDrop(() => redEnd, false, luck), null);
+});
+
+test('rollDrop: luck defaults to 1 (unchanged from base behaviour)', () => {
+  assert.equal(rollDrop(() => GEMS.blueChance - 1e-9), 'blue');
+  assert.equal(rollDrop(() => GEMS.blueChance), 'red');
+});
+
+test('rollDrop: blue chance clamps at 0.6 under extreme luck', () => {
+  const luck = 10; // blueChance*10 = 3.5, clamped to 0.6
+  assert.equal(rollDrop(() => 0.6 - 1e-9, false, luck), 'blue');
+  assert.equal(rollDrop(() => 0.6, false, luck), 'red'); // just past the clamped blue band
+});
+
+test('rollDrop: red chance clamps at 0.2 (including isBig doubling)', () => {
+  const luck = 10;
+  // blue clamps to 0.6, red clamps to 0.2 → red band is [0.6, 0.8)
+  assert.equal(rollDrop(() => 0.8 - 1e-9, true, luck), 'red');
+  assert.equal(rollDrop(() => 0.8, true, luck), null);
+  // even isBig can't push red past 0.2
+  assert.equal(rollDrop(() => 0.6, false, luck), 'red');
+  assert.equal(rollDrop(() => 0.8 - 1e-9, false, luck), 'red');
+  assert.equal(rollDrop(() => 0.8, false, luck), null);
+});
+
 test('gemBlinking is true only during the last BLINK_TIME seconds of life', () => {
   const g = createGems();
   const gem = spawnGem(g, 0, 0, 10, makeRng(1));

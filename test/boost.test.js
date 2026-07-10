@@ -95,3 +95,45 @@ test('addBoost clamps to a raised capacity', () => {
   addBoost(s, 0.5);
   assert.equal(s.boost.meter, 3);
 });
+
+// --- v5.1: Efficient Burners (boost drain multiplier) ---
+
+test('burners mod scales boost drain by boostDrain', () => {
+  const s = createShip(400, 300);
+  s.mods.boostDrain = 0.75;
+  updateShip(s, { ...idle, boosting: true }, 1, arena);
+  assert.ok(Math.abs(s.boost.meter - (1 - BOOST.drainPerSec * 0.75)) < 1e-9);
+
+  const s2 = createShip(400, 300);
+  s2.mods.boostDrain = 0.75 * 0.75; // 2 stacks
+  updateShip(s2, { ...idle, boosting: true }, 1, arena);
+  assert.ok(Math.abs(s2.boost.meter - (1 - BOOST.drainPerSec * 0.5625)) < 1e-9);
+});
+
+// --- v5.1: Adrenaline (max-speed multiplier) ---
+
+test('adrenaline lifts the speed cap +10% only below half HP', () => {
+  const hurt = createShip(400, 300);
+  hurt.mods.adrenaline = 1;
+  hurt.hp = 1; hurt.maxHp = 3; // active
+  hurt.angle = 0; hurt.vx = 5000; hurt.vy = 0;
+  updateShip(hurt, { ...idle, boosting: false }, 1 / 60, arena);
+  const capBoosted = SHIP.maxSpeed * hurt.mods.engine * 1.10;
+  assert.ok(Math.abs(Math.hypot(hurt.vx, hurt.vy) - capBoosted) < 1e-6);
+
+  const full = createShip(400, 300);
+  full.mods.adrenaline = 1;
+  full.hp = 3; full.maxHp = 3; // inactive at full HP
+  full.angle = 0; full.vx = 5000; full.vy = 0;
+  updateShip(full, { ...idle, boosting: false }, 1 / 60, arena);
+  assert.ok(Math.abs(Math.hypot(full.vx, full.vy) - SHIP.maxSpeed * full.mods.engine) < 1e-6);
+});
+
+test('adrenaline speed is OFF at exactly half HP', () => {
+  const s = createShip(400, 300);
+  s.mods.adrenaline = 1;
+  s.maxHp = 4; s.hp = 2; // exactly 0.5 → OFF
+  s.angle = 0; s.vx = 5000; s.vy = 0;
+  updateShip(s, { ...idle, boosting: false }, 1 / 60, arena);
+  assert.ok(Math.abs(Math.hypot(s.vx, s.vy) - SHIP.maxSpeed * s.mods.engine) < 1e-6);
+});

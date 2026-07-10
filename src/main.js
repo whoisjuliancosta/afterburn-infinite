@@ -1,5 +1,5 @@
 // src/main.js
-import { WAVE, CRIT, GEMS, ROCKET } from './config.js';
+import { WAVE, CRIT, GEMS, ROCKET, GUN } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
 import { createShip, updateShip, updateGun } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
@@ -11,7 +11,7 @@ import { createRockets, fireRocket, updateRockets } from './rockets.js';
 import { loadBoard, recordRun, saveBoard, placed } from './board.js';
 import { rollOffers, applyUpgrade } from './upgrades.js';
 import { createFloaters, addFloater, updateFloaters } from './floaters.js';
-import { initSprites, SPRITES } from './sprites.js';
+import { initSprites, SPRITES, GLOW } from './sprites.js';
 import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
@@ -75,8 +75,8 @@ let boosting = false;   // last-frame boost state (plume scale, afterimage, sfx 
 let wasBoosting = false;// prior-frame boost state, for the boost-start sfx edge
 let shipTrail = [];     // recent {x, y, angle} for the boost afterimage
 let boostTrailT = 0;    // afterimage lifetime countdown (kept fresh while boosting)
-
-const HOSTILE = '#ff5b8a'; // enemy-shot color
+let rocketPending = false; // latched right-click; survives hit-pause frames until the fire check consumes it
+let stressMode = false;    // ?screen=stress: worst-case perf scene, sustained each frame (dev/measurement only)
 
 function startRun() {
   run = createRun();
@@ -98,6 +98,7 @@ function startRun() {
   wasBoosting = false;
   shipTrail = [];
   boostTrailT = 0;
+  rocketPending = false;
   startWave(1);
   mode = 'playing';
 }
@@ -140,7 +141,7 @@ function killEnemy(e) {
   } else {
     // Gems v2: one mutually-exclusive roll → blue (boost) / red (heart) / none.
     // Splitter and boss-class kills roll red at 2× (isBig).
-    const kind = rollDrop(rng, e.type === 'splitter');
+    const kind = rollDrop(rng, e.type === 'splitter', ship.mods.luck);
     if (kind) spawnGem(gems, e.x, e.y, gemValue, rng, kind);
     spawnExplosion(e.x, e.y, e.radius);
     burst(fx, e.x, e.y, '#ff9e3e', 7, rng, 160, true); // halved: sprite carries it
@@ -224,9 +225,15 @@ function tickPlaying(snap, dt) {
   bullets.push(...shots);
   bullets = updateBullets(bullets, dt, arena);
 
-  // Rockets: right-click launches one along the nose (fireRocket returns false
-  // while cooling down — only whoosh + count the launch when it actually fires).
-  if (snap.rocketPressed && fireRocket(rockets, ship)) sfxRocket();
+  // Rockets: right-click launches one along the nose. rocketPending is latched in
+  // frame() so a click landing on a hit-pause frame (tickPlaying returns above
+  // before this line) isn't lost. Consume the latch here — clearing it whether or
+  // not the shot fires, so it recovers a pause-eaten click without queuing through
+  // the cooldown. fireRocket returns false while cooling down (whoosh only fires).
+  if (rocketPending) {
+    rocketPending = false;
+    if (fireRocket(rockets, ship)) sfxRocket();
+  }
 
   // spawn pipeline: schedule → telegraph → enemy
   waveT += dt;
@@ -249,6 +256,8 @@ function tickPlaying(snap, dt) {
     if (o.spawn) enemies.push(spawnEnemy(o.spawn, o.x, o.y, run.wave));
     else enemyShots.push(o);
   }
+  // Hard cap (v5.1 perf): bound hostile shots on screen, culling the oldest.
+  if (enemyShots.length > 220) enemyShots.splice(0, enemyShots.length - 220);
 
   // Enemy shots: fly straight, cull off-arena, collide with the ship.
   for (const s of enemyShots) {
@@ -278,6 +287,12 @@ function tickPlaying(snap, dt) {
   // normal kills). shotsHit isn't credited to rockets (that stat tracks the gun).
   const detonations = updateRockets(rockets, enemies, dt);
   for (const det of detonations) {
+    // Range-end detonation in empty air (zero hits): skip the big FX/sfx — just a
+    // small fizzle puff so empty booms don't flash the screen (v5 review minor).
+    if (det.hits.length === 0) {
+      burst(fx, det.x, det.y, '#e6743e', 6, rng, 90); // small non-additive fizzle
+      continue;
+    }
     burst(fx, det.x, det.y, '#ff9e3e', 26, rng, 300, true); // big additive glow
     spawnExplosion(det.x, det.y, ROCKET.aoeRadius * 0.5);
     addShake(fx, 10);
@@ -384,15 +399,6 @@ function handlePaintClick(snap) {
 // ------------------------------------------------------------- rendering ------
 const frameIndex = () => Math.floor(clock * 6) % 2; // 6fps 2-frame idle flip
 
-function drawFrame(spr, x, y, angle = 0, scale = 1) {
-  const img = Array.isArray(spr) ? spr[frameIndex()] : spr;
-  g.save();
-  g.translate(x, y);
-  g.rotate(angle);
-  g.drawImage(img, -img.width * scale / 2, -img.height * scale / 2, img.width * scale, img.height * scale);
-  g.restore();
-}
-
 // Draw a sprite (canvas or 2-frame array) centred at x,y, rotated, scaled so its
 // larger dimension = `diameter` (aspect preserved, nearest-neighbor). Used for
 // ships/enemies/projectiles so pack art and code-gen fallback share one sizing
@@ -407,6 +413,27 @@ function drawScaled(spr, x, y, angle, diameter) {
   g.rotate(angle);
   g.drawImage(img, -w / 2, -h / 2, w, h);
   g.restore();
+}
+
+// Draw a pre-baked glow sprite (from sprites.js GLOW). `size` is the desired
+// on-screen extent of the ORIGINAL content's larger dimension; the baked halo
+// scales along with it. `angle` 0 skips the save/rotate entirely (symmetric
+// sprites — bullets/shots/gems — so a whole batch runs with no per-entity ctx
+// state). `fi` overrides the frame index for plumes with their own cadence.
+function drawGlow(glow, x, y, angle, size, fi) {
+  const n = glow.frames.length;
+  const fr = glow.frames[(fi != null ? fi : (n > 1 ? frameIndex() : 0)) % n];
+  const k = size / glow.nat;
+  const w = fr.width * k, h = fr.height * k;
+  if (angle) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(angle);
+    g.drawImage(fr, -w / 2, -h / 2, w, h);
+    g.restore();
+  } else {
+    g.drawImage(fr, x - w / 2, y - h / 2, w, h);
+  }
 }
 
 function render() {
@@ -437,65 +464,41 @@ function render() {
     g.strokeRect(tg.x - 10, tg.y - 10, 20, 20);
   }
 
-  // --- Glow pass: bullets + enemy shots + thruster (shadowBlur), then reset ---
-  g.save();
-  g.shadowBlur = 12;
-  // Player bullets → animated projectile sprite (rotated to travel dir), else square.
-  g.shadowColor = '#ffd75e';
-  const playerProj = ASSETS.projectiles.player;
-  if (playerProj) {
-    for (const b of bullets) drawScaled(playerProj, b.x, b.y, Math.atan2(b.vy, b.vx), b.radius * 6);
-  } else {
-    g.fillStyle = '#ffd75e';
-    for (const b of bullets) g.fillRect(b.x - b.radius / 2, b.y - b.radius / 2, b.radius, b.radius);
-  }
-  // Hostile shots → pink projectile sprite; boss shots (bigger radius) use the
-  // boss bolt if present. Falls back to the filled circle.
-  g.shadowColor = HOSTILE;
-  const enemyProj = ASSETS.projectiles.enemy;
-  const bossProj = ASSETS.projectiles.boss || enemyProj;
-  if (enemyProj) {
-    for (const s of enemyShots) {
-      const spr = s.radius >= 6 ? bossProj : enemyProj;
-      drawScaled(spr, s.x, s.y, Math.atan2(s.vy, s.vx), s.radius * 5);
-    }
-  } else {
-    g.fillStyle = HOSTILE;
-    for (const s of enemyShots) {
-      g.beginPath();
-      g.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-      g.fill();
-    }
+  // --- Pre-baked glow passes (v5.1 perf): bullets, enemy shots, thruster. All
+  // glow is baked into the sprites (GLOW), so the frame loop is plain drawImage
+  // with zero shadowBlur. Bullets/shots are symmetric → drawn WITHOUT rotation
+  // and WITHOUT per-entity save/restore, one batch each.
+  for (const b of bullets) drawGlow(GLOW.bullet, b.x, b.y, 0, b.radius * 6);
+  for (const s of enemyShots) {
+    drawGlow(s.radius >= 6 ? GLOW.bossShot : GLOW.enemyShot, s.x, s.y, 0, s.radius * 5);
   }
   // Engine thruster behind the ship while thrusting: pack plume (animated) or the
   // code-gen flame. Both trail rearward when rotated by ship.angle. Boost scales
-  // the plume up ~50% and reaches further back.
+  // the plume up ~50% and reaches further back. Colour (warm/cyan) is a separate
+  // pre-baked set, not a runtime shadowColor.
   if (thrusting) {
-    g.shadowColor = boosting ? '#5fe8ff' : '#ff9e3e';
     const scale = boosting ? 1.5 : 1;
-    if (ASSETS.thrust.length) {
-      const fr = ASSETS.thrust[Math.floor(clock * 14) % ASSETS.thrust.length];
+    const plume = boosting ? GLOW.thrustBoost : GLOW.thrustNormal;
+    if (GLOW.thrustIsPack) {
       const off = ship.radius * 1.2 * scale;
-      if (fr) drawScaled(fr, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2 * scale);
-    } else if (SPRITES.flame) {
+      const fi = Math.floor(clock * 14);
+      drawGlow(plume, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2 * scale, fi);
+    } else {
+      // Code-gen flame: drawFrame semantics were native×scale, so size = nat×scale.
       const off = ship.radius * 0.8 * scale;
-      drawFrame(SPRITES.flame, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, scale);
+      drawGlow(plume, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, plume.nat * scale);
     }
   }
-  g.restore();
 
   // Gems: kind-tinted glow (blue = boost, red = heart); drawn ~30% smaller than
-  // native (spec C); blink (skip alternate frames) during the last 1.5s.
-  if (gems && gems.list.length && SPRITES.gem) {
-    g.save();
-    g.shadowBlur = 8;
+  // native (spec C); blink (skip alternate frames) during the last 1.5s. Glow is
+  // pre-baked; symmetric so no rotation. One batch, no per-gem ctx state.
+  if (gems && gems.list.length) {
+    const gemSize = GLOW.gemBlue.nat * 0.7; // matches the old drawFrame(…, 0.7)
     for (const gem of gems.list) {
       if (gemBlinking(gem) && Math.sin(clock * 18) < 0) continue;
-      const red = gem.kind === 'red';
-      g.shadowColor = red ? '#e0524a' : '#5fe8ff';
-      drawFrame(red ? (SPRITES.gemRed || SPRITES.gem) : SPRITES.gem, gem.x, gem.y, 0, 0.7);
+      drawGlow(gem.kind === 'red' ? GLOW.gemRed : GLOW.gemBlue, gem.x, gem.y, 0, gemSize);
     }
-    g.restore();
   }
 
   for (const e of enemies) {
@@ -522,25 +525,26 @@ function render() {
   }
 
   // Rockets: missile sprite pointed along travel, with a short additive glow
-  // trail streaming out the back.
+  // trail streaming out the back. Composite toggles once (→ 'lighter' for all
+  // trails, → 'source-over' for all missiles), not per rocket; missile glow is
+  // pre-baked (GLOW.rocket) so no runtime shadowBlur.
   if (rockets && rockets.list.length) {
     g.save();
+    g.globalCompositeOperation = 'lighter';
     for (const rk of rockets.list) {
       const ang = Math.atan2(rk.vy, rk.vx);
       const cos = Math.cos(ang), sin = Math.sin(ang);
-      g.globalCompositeOperation = 'lighter';
       for (let i = 1; i <= 3; i++) {
         const t = i * rk.radius * 1.6;
         g.globalAlpha = 0.4 - i * 0.1;
         g.fillStyle = i === 1 ? '#ffd75e' : '#ff7a3e';
         g.fillRect(rk.x - cos * t - 2, rk.y - sin * t - 2, 4, 4);
       }
-      g.globalCompositeOperation = 'source-over';
-      g.globalAlpha = 1;
-      g.shadowBlur = 10;
-      g.shadowColor = '#ff9e3e';
-      if (SPRITES.rocket) drawScaled(SPRITES.rocket, rk.x, rk.y, ang, rk.radius * 5);
-      g.shadowBlur = 0;
+    }
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    for (const rk of rockets.list) {
+      drawGlow(GLOW.rocket, rk.x, rk.y, Math.atan2(rk.vy, rk.vx), rk.radius * 5);
     }
     g.restore();
     g.globalAlpha = 1;
@@ -650,6 +654,35 @@ function renderFloaters() {
 // ---------------------------------------------------------- dev screenshot ----
 // ?screen=upgrade / ?screen=gameover jump straight to that state with fake data
 // so headless screenshots can cover those screens. No param → normal boot.
+// ?screen=stress sustain (dev/measurement only, gated by stressMode). Re-tops the
+// worst-case scene every playing frame so the render load stays saturated across
+// the whole sample window, while the real sim keeps everything moving/firing.
+const STRESS_ENEMY_TYPES = ['drifter', 'darter', 'spitter', 'orbiter', 'weaver', 'splitter'];
+function stressBullet() {
+  const a = rng() * Math.PI * 2;
+  const sp = GUN.bulletSpeed * ship.mods.bulletSpeed;
+  return {
+    x: rng() * arena.w, y: rng() * arena.h,
+    vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+    damage: GUN.damage + ship.mods.damage, pierce: ship.mods.pierce, bounces: ship.mods.bounce,
+    traveled: 0, range: GUN.bulletRange * ship.mods.bulletSpeed, radius: GUN.bulletRadius, dead: false,
+  };
+}
+function stressShot() {
+  const a = rng() * Math.PI * 2;
+  return { x: rng() * arena.w, y: rng() * arena.h, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, radius: 6, dead: false };
+}
+function stressSustain() {
+  ship.hp = ship.maxHp; ship.iframes = 0.2; // invulnerable (no death) and non-blinking (visible)
+  let boss = enemies.find(e => e.type === 'boss');
+  if (!boss) { boss = spawnEnemy('boss', arena.w / 2, arena.h * 0.28, 20); enemies.push(boss); }
+  boss.hp = Math.max(1, Math.floor(boss.maxHp * 0.32)); // pin to P3 (<1/3 maxHp): spirals + minis + blinks
+  while (enemies.length < 40) enemies.push(spawnEnemy(STRESS_ENEMY_TYPES[Math.floor(rng() * STRESS_ENEMY_TYPES.length)], rng() * arena.w, rng() * arena.h, 20));
+  while (bullets.length < 200) bullets.push(stressBullet());
+  while (enemyShots.length < 150) enemyShots.push(stressShot());
+  if (fx.particles.length < 300) burst(fx, arena.w / 2, arena.h / 2, '#ff9e3e', 300 - fx.particles.length, rng, 260, true);
+}
+
 function seedDevScreen(which) {
   startRun();
   if (which === 'upgrade') {
@@ -679,6 +712,27 @@ function seedDevScreen(which) {
     spawnGem(gems, arena.w * 0.6, arena.h * 0.66, 30, rng, 'blue');
     floaters.list = [];
     mode = 'playing';
+  } else if (which === 'stress') {
+    // Worst-case render scene for the T-verify perf measurement (spec A.5). A
+    // capped-build player, ~40 enemies incl. a P3 boss (spirals + minis + walls),
+    // ~150 enemy shots, ~200 bullets and 300 particles — all in real 'playing'
+    // mode so the full sim runs every frame. stressSustain() re-tops the scene
+    // each frame so the worst case holds for the whole 10s sample (not a static
+    // tableau: every entity moves, the boss fires, kills spawn gems/explosions).
+    run.wave = 20; run.score = 92000; run.streak = 20; powerLevel = 20;
+    // Capped build: caps clamp inside applyUpgrade, so over-applying is safe.
+    for (const id of ['rapid', 'rapid', 'rapid', 'rapid', 'rapid', 'rapid', 'spread',
+      'spread', 'spread', 'pierce', 'pierce', 'pierce', 'pierce', 'pierce', 'ricochet',
+      'ricochet', 'ricochet', 'velocity', 'velocity', 'velocity', 'heavy', 'heavy',
+      'bigpayload', 'bigpayload', 'fastreload', 'fastreload', 'lucky', 'lucky',
+      'rearguard', 'adrenaline', 'aegis', 'boosttank', 'boosttank', 'attractor', 'attractor']) {
+      applyUpgrade(ship, id);
+    }
+    pending = []; telegraphs = []; enemies = []; enemyShots = []; bullets = [];
+    stressMode = true;
+    stressSustain();          // seed the population; frame() re-tops it each tick
+    floaters.list = [];
+    mode = 'playing';
   } else {
     run.score = 12450; run.wave = 9;
     // Seed a board so the game-over leaderboard + placed highlight render.
@@ -705,6 +759,10 @@ function frame(t) {
     if (!handlePaintClick(snap)) { initAudio(); startRun(); }
   }
   else if (mode === 'playing') {
+    if (stressMode) stressSustain(); // re-saturate the worst-case scene before the tick
+    // Latch a right-click before anything can early-return; tickPlaying consumes it
+    // (may be a hit-pause frame that returns before the fire check).
+    if (snap.rocketPressed) rocketPending = true;
     // Toggling pause skips tickPlaying for this frame, so ~1 frame of world time
     // (this dt, already clamped) is dropped per toggle; ~2 across a pause+resume.
     // Intentional and player-favorable — the world advances slightly less, never
@@ -732,7 +790,7 @@ function frame(t) {
 const devScreen = new URLSearchParams(location.search).get('screen');
 loadAssets().then(() => {
   initSprites(paint); // rebind SPRITES to pack art now that ASSETS.ready is true
-  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss') seedDevScreen(devScreen);
+  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss' || devScreen === 'stress') seedDevScreen(devScreen);
   else mode = 'menu';
 });
 requestAnimationFrame(frame);

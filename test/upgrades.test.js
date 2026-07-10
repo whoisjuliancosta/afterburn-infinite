@@ -6,12 +6,14 @@ import { createShip } from '../src/ship.js';
 import { makeRng } from '../src/utils.js';
 import { CAPS, BOOST } from '../src/config.js';
 
-test('pool has the 15 spec upgrades (extradash/recovery reworked away)', () => {
+test('pool has the 21 spec upgrades (v5.1 adds six)', () => {
   const ids = UPGRADES.map(u => u.id).sort();
   assert.deepEqual(ids, [
-    'aegis', 'attractor', 'boosttank', 'deadeye', 'engine', 'executioner', 'heavy',
-    'hull', 'overclock', 'pierce', 'rapid', 'ricochet', 'secondwind', 'spread', 'velocity',
+    'adrenaline', 'aegis', 'attractor', 'bigpayload', 'boosttank', 'burners', 'deadeye',
+    'engine', 'executioner', 'fastreload', 'heavy', 'hull', 'lucky', 'overclock', 'pierce',
+    'rapid', 'rearguard', 'ricochet', 'secondwind', 'spread', 'velocity',
   ]);
+  assert.equal(new Set(ids).size, 21);
 });
 
 test('legacy ids extradash/recovery are gone from the pool', () => {
@@ -125,19 +127,18 @@ test('boosttank units never exceed BOOST.maxUnits', () => {
   assert.equal(s.boost.units, BOOST.maxUnits);
 });
 
-test('boosttank excluded once at 2 stacks (re-rolls like aegis)', () => {
+test('boosttank excluded once at 6 stacks (re-rolls like aegis)', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'boosttank');
-  applyUpgrade(s, 'boosttank'); // stacks now 2
-  assert.equal(s.boost.stacks, 2);
+  for (let i = 0; i < 6; i++) applyUpgrade(s, 'boosttank');
+  assert.equal(s.boost.stacks, 6);
   for (let seed = 0; seed < 50; seed++) {
     assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'boosttank'));
   }
 });
 
-test('boosttank still offerable below 2 stacks', () => {
+test('boosttank still offerable below 6 stacks', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'boosttank'); // stacks 1
+  for (let i = 0; i < 5; i++) applyUpgrade(s, 'boosttank'); // stacks 5
   let seen = false;
   for (let seed = 0; seed < 50 && !seen; seed++) {
     if (rollOffers(s, makeRng(seed)).some(o => o.id === 'boosttank')) seen = true;
@@ -154,18 +155,17 @@ test('attractor multiplies gem magnet radius by 1.45 per stack', () => {
   assert.ok(Math.abs(s.mods.magnet - 1.45 * 1.45) < 1e-9);
 });
 
-test('attractor excluded once at 2 stacks (magnet at 1.45^2)', () => {
+test('attractor excluded once at 6 stacks (magnet at 1.45^6)', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'attractor');
-  applyUpgrade(s, 'attractor');
+  for (let i = 0; i < 6; i++) applyUpgrade(s, 'attractor');
   for (let seed = 0; seed < 50; seed++) {
     assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'attractor'));
   }
 });
 
-test('attractor still offerable below 2 stacks', () => {
+test('attractor still offerable below 6 stacks', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'attractor'); // 1 stack
+  for (let i = 0; i < 5; i++) applyUpgrade(s, 'attractor'); // 5 stacks
   let seen = false;
   for (let seed = 0; seed < 50 && !seen; seed++) {
     if (rollOffers(s, makeRng(seed)).some(o => o.id === 'attractor')) seen = true;
@@ -238,4 +238,100 @@ test('rapid can never push fireRate past cap via applyUpgrade clamp', () => {
   s.mods.fireRate = CAPS.fireRate - 0.01;
   applyUpgrade(s, 'rapid'); // 1.25x would overshoot
   assert.equal(s.mods.fireRate, CAPS.fireRate);
+});
+
+// --- v5.1: six new upgrades ---
+
+test('createShip seeds neutral v5.1 mod defaults', () => {
+  const s = createShip(0, 0);
+  assert.equal(s.mods.rocketAoe, 1);
+  assert.equal(s.mods.rocketReload, 1);
+  assert.equal(s.mods.boostDrain, 1);
+  assert.equal(s.mods.luck, 1);
+  assert.equal(s.mods.rear, 0);
+  assert.equal(s.mods.adrenaline, 0);
+});
+
+test('bigpayload multiplies rocket AoE ×1.4 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'bigpayload');
+  assert.ok(Math.abs(s.mods.rocketAoe - 1.4) < 1e-9);
+  applyUpgrade(s, 'bigpayload');
+  assert.ok(Math.abs(s.mods.rocketAoe - 1.4 * 1.4) < 1e-9);
+});
+
+test('fastreload multiplies rocket reload ×0.75 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'fastreload');
+  assert.ok(Math.abs(s.mods.rocketReload - 0.75) < 1e-9);
+  applyUpgrade(s, 'fastreload');
+  assert.ok(Math.abs(s.mods.rocketReload - 0.75 * 0.75) < 1e-9);
+});
+
+test('burners multiplies boost drain ×0.75 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'burners');
+  assert.ok(Math.abs(s.mods.boostDrain - 0.75) < 1e-9);
+  applyUpgrade(s, 'burners');
+  assert.ok(Math.abs(s.mods.boostDrain - 0.75 * 0.75) < 1e-9);
+});
+
+test('lucky multiplies gem-drop luck ×1.3 per stack', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'lucky');
+  assert.ok(Math.abs(s.mods.luck - 1.3) < 1e-9);
+  applyUpgrade(s, 'lucky');
+  assert.ok(Math.abs(s.mods.luck - 1.3 * 1.3) < 1e-9);
+});
+
+test('rearguard stacks to 3 backward bullets', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'rearguard');
+  assert.equal(s.mods.rear, 1);
+  applyUpgrade(s, 'rearguard');
+  applyUpgrade(s, 'rearguard');
+  assert.equal(s.mods.rear, 3);
+});
+
+test('adrenaline sets the adrenaline flag (single stack, idempotent)', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'adrenaline');
+  assert.equal(s.mods.adrenaline, 1);
+  applyUpgrade(s, 'adrenaline');
+  assert.equal(s.mods.adrenaline, 1);
+});
+
+// --- v5.1: offer exclusions at stack limits ---
+
+const excludedAfter = (id, applyN) => {
+  const s = createShip(0, 0);
+  for (let i = 0; i < applyN; i++) applyUpgrade(s, id);
+  for (let seed = 0; seed < 50; seed++) {
+    assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== id),
+      `${id} should be excluded after ${applyN} picks (seed ${seed})`);
+  }
+};
+const offerableAfter = (id, applyN) => {
+  const s = createShip(0, 0);
+  for (let i = 0; i < applyN; i++) applyUpgrade(s, id);
+  let seen = false;
+  for (let seed = 0; seed < 80 && !seen; seed++) {
+    if (rollOffers(s, makeRng(seed)).some(o => o.id === id)) seen = true;
+  }
+  assert.ok(seen, `${id} should still be offerable after ${applyN} picks`);
+};
+
+test('bigpayload/fastreload/burners/lucky excluded at 6 stacks, offerable below', () => {
+  for (const id of ['bigpayload', 'fastreload', 'burners', 'lucky']) {
+    offerableAfter(id, 0);
+    offerableAfter(id, 5);
+    excludedAfter(id, 6);
+  }
+});
+
+test('adrenaline excluded after one pick; rearguard after three', () => {
+  offerableAfter('adrenaline', 0);
+  excludedAfter('adrenaline', 1);
+  offerableAfter('rearguard', 2);
+  excludedAfter('rearguard', 3);
 });

@@ -1,10 +1,10 @@
-export const BOOST = { drainPerSec: 0.40, thrustMult: 2.4, speedMult: 1.9, baseUnits: 1, maxUnits: 3 };
+export const BOOST = { drainPerSec: 0.40, thrustMult: 2.4, speedMult: 1.9, baseUnits: 1, maxUnits: 9 };
 
 export const CRIT = { chance: 0.10, mult: 2 };
 
 // Upgrade stat caps (spec E). applyUpgrade clamps each mod here; rollOffers hides
 // an upgrade once its target mod is at cap.
-export const CAPS = { fireRate: 3, engine: 2, bulletSpeed: 2.5, pierce: 5, spread: 3, bounce: 3 };
+export const CAPS = { fireRate: 9, engine: 6, bulletSpeed: 7.5, pierce: 15, spread: 9, bounce: 9 };
 
 export const SHIP = {
   radius: 18,
@@ -63,4 +63,4 @@ export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5
 
 export const GEMS = { lifetime: 6, magnetRadius: 200, magnetAccel: 900, maxSpeed: 480, radius: 5, blueChance: 0.35, redChance: 0.08, boostFill: 0.10, heartFill: 0.10 };
 
-export const ROCKET = { cooldown: 5, speed: 360, damage: 8, aoeRadius: 110, radius: 6, range: 900 };
+export const ROCKET = { cooldown: 5, speed: 360, damage: 8, aoeRadius: 110, radius: 6, range: 900, reloadFloor: 0.75 };

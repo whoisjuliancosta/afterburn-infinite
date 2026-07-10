@@ -131,6 +131,41 @@ test('hp is mutated on the passed enemy objects', () => {
   assert.equal(e.hp, 30 - ROCKET.damage);
 });
 
+// --- v5.1: Big Payload (rocketAoe) + Fast Reload (rocketReload) captured at fire ---
+
+test('bigpayload mod scales the spawned rocket aoeRadius at fire time', () => {
+  const r = createRockets();
+  fireRocket(r, ship({ mods: { rocketAoe: 1.4 } }));
+  assert.ok(Math.abs(r.list[0].aoeRadius - ROCKET.aoeRadius * 1.4) < 1e-9);
+});
+
+test('rocket aoeRadius is baked in and immune to later mod changes', () => {
+  const r = createRockets();
+  const s = ship({ mods: { rocketAoe: 1.4 } });
+  fireRocket(r, s);
+  s.mods.rocketAoe = 2; // change after firing
+  assert.ok(Math.abs(r.list[0].aoeRadius - ROCKET.aoeRadius * 1.4) < 1e-9);
+});
+
+test('fastreload mod scales the launcher cooldown at fire time', () => {
+  const r = createRockets();
+  fireRocket(r, ship({ mods: { rocketReload: 0.75 } }));
+  assert.ok(Math.abs(r.cooldown - ROCKET.cooldown * 0.75) < 1e-9);
+});
+
+test('rocket cooldown is floored at ROCKET.reloadFloor', () => {
+  const r = createRockets();
+  fireRocket(r, ship({ mods: { rocketReload: 0.01 } })); // 5*0.01 = 0.05 < floor
+  assert.equal(r.cooldown, ROCKET.reloadFloor);
+});
+
+test('a mods-less ship still fires with neutral aoe and cooldown', () => {
+  const r = createRockets();
+  fireRocket(r, ship()); // helper has no mods
+  assert.equal(r.list[0].aoeRadius, ROCKET.aoeRadius);
+  assert.equal(r.cooldown, ROCKET.cooldown);
+});
+
 test('multiple rockets detonate independently', () => {
   const r = createRockets();
   // spawn two rockets manually (bypass cooldown gate) at different spots
