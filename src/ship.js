@@ -1,5 +1,5 @@
 // src/ship.js
-import { SHIP } from './config.js';
+import { SHIP, GUN } from './config.js';
 import { TAU } from './utils.js';
 
 export function createShip(x, y) {
@@ -42,4 +42,43 @@ export function updateShip(ship, input, dt, arena) {
 
   ship.iframes = Math.max(0, ship.iframes - dt);
   ship.cooldown = Math.max(0, ship.cooldown - dt);
+}
+
+export function updateGun(ship, input, dt, rng) {
+  if (ship.cooldown > 0) return [];
+  const autoInt = GUN.autoInterval / ship.mods.fireRate;
+  if (input.taps > 0) {
+    ship.cooldown = autoInt * GUN.semiFloor;
+    return fire(ship, 0, rng, false);
+  }
+  if (input.held) {
+    ship.cooldown = autoInt;
+    return fire(ship, GUN.spreadAngle, rng, true);
+  }
+  return [];
+}
+
+function fire(ship, jitter, rng, withSpread) {
+  const speed = GUN.bulletSpeed * ship.mods.bulletSpeed;
+  const range = GUN.bulletRange * ship.mods.bulletSpeed;
+  const damage = GUN.damage + ship.mods.damage;
+
+  const angles = [ship.angle + (rng() - 0.5) * 2 * jitter];
+  if (withSpread) {
+    for (let i = 1; i <= ship.mods.spread; i++) {
+      angles.push(ship.angle + GUN.spreadShotAngle * i, ship.angle - GUN.spreadShotAngle * i);
+    }
+  }
+
+  ship.vx -= Math.cos(ship.angle) * SHIP.recoil;
+  ship.vy -= Math.sin(ship.angle) * SHIP.recoil;
+
+  return angles.map(a => ({
+    x: ship.x + Math.cos(a) * ship.radius,
+    y: ship.y + Math.sin(a) * ship.radius,
+    vx: Math.cos(a) * speed,
+    vy: Math.sin(a) * speed,
+    damage, pierce: ship.mods.pierce,
+    traveled: 0, range, radius: GUN.bulletRadius, dead: false,
+  }));
 }
