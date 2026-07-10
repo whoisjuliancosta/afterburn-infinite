@@ -47,3 +47,45 @@ test('dead enemies are not hit again', () => {
   const b2 = bullet({ x: 4 });
   assert.equal(collideBullets([b2], [e]).length, 0); // hp already <= 0
 });
+
+test('backward-compat: without rng/crit, dealt equals damage and crit false', () => {
+  const b = bullet({ damage: 3 });
+  const e = enemy({ x: 5, y: 7, hp: 10 });
+  const hits = collideBullets([b], [e]);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].damage, 3);
+  assert.equal(hits[0].dealt, 3);
+  assert.equal(hits[0].crit, false);
+  assert.equal(hits[0].x, 5);
+  assert.equal(hits[0].y, 7);
+  assert.equal(e.hp, 7); // reduced by dealt (== damage)
+});
+
+test('crit roll: rng below chance crits and applies mult', () => {
+  const b = bullet({ damage: 3 });
+  const e = enemy({ x: 5, y: 7, hp: 20 });
+  const rng = () => 0.05; // < 0.10 chance -> crit
+  const hits = collideBullets([b], [e], rng, { chance: 0.10, mult: 2 });
+  assert.equal(hits[0].crit, true);
+  assert.equal(hits[0].dealt, 6); // 3 * 2
+  assert.equal(e.hp, 14); // 20 - 6
+});
+
+test('crit roll: rng at/above chance does not crit', () => {
+  const b = bullet({ damage: 3 });
+  const e = enemy({ x: 0, y: 0, hp: 20 });
+  const rng = () => 0.5; // >= 0.10 -> no crit
+  const hits = collideBullets([b], [e], rng, { chance: 0.10, mult: 2 });
+  assert.equal(hits[0].crit, false);
+  assert.equal(hits[0].dealt, 3);
+  assert.equal(e.hp, 17);
+});
+
+test('crit dealt is rounded', () => {
+  const b = bullet({ damage: 5 });
+  const e = enemy({ x: 0, y: 0, hp: 30 });
+  const rng = () => 0; // crit
+  const hits = collideBullets([b], [e], rng, { chance: 1, mult: 1.5 });
+  assert.equal(hits[0].dealt, 8); // round(5 * 1.5 = 7.5) = 8
+  assert.equal(e.hp, 22);
+});
