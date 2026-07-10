@@ -1,6 +1,6 @@
-# Untitled Space Shooter 🚀
+# AFTERBURN INFINITE 🚀
 
-A 360° arena space shooter — pilot skill, roguelite upgrades, pixel art. Built with vanilla JavaScript and Canvas 2D. Zero dependencies, no build step.
+**AFTERBURN INFINITE** is a 360° arena space shooter — pilot skill, roguelite upgrades, pixel art. Built with vanilla JavaScript and Canvas 2D. Zero dependencies, no build step.
 
 ## ▶️ Play it now
 
