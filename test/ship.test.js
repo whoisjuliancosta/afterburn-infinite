@@ -60,3 +60,49 @@ test('iframes and cooldown tick down', () => {
   assert.equal(s.iframes, 0.75);
   assert.equal(s.cooldown, 0.75);
 });
+
+// --- mouse aim: nose chases cursor at turn rate ---
+
+test('angleDiff gives signed shortest rotation', async () => {
+  const { angleDiff } = await import('../src/utils.js');
+  assert.ok(Math.abs(angleDiff(0, 1) - 1) < 1e-9);
+  assert.ok(Math.abs(angleDiff(1, 0) + 1) < 1e-9);
+  // across the wrap: from just below +pi to just above -pi is a small positive turn
+  assert.ok(Math.abs(angleDiff(3, -3) - (2 * Math.PI - 6)) < 1e-9);
+});
+
+test('nose turns toward aim point, clamped by turn rate', () => {
+  const s = createShip(400, 300);
+  s.angle = 0;
+  // aim straight down (+y): target angle = PI/2, farther than one step
+  updateShip(s, { ...idle, aimX: 400, aimY: 700 }, 0.1, arena);
+  assert.ok(Math.abs(s.angle - SHIP.turnRate * 0.1) < 1e-9);
+});
+
+test('nose snaps to aim when within one step', () => {
+  const s = createShip(400, 300);
+  s.angle = 0.01;
+  updateShip(s, { ...idle, aimX: 800, aimY: 300 }, 0.1, arena); // target angle 0
+  assert.ok(Math.abs(s.angle) < 1e-9);
+});
+
+test('aim takes the shortest path across the angle wrap', () => {
+  const s = createShip(400, 300);
+  s.angle = 3; // near +pi
+  updateShip(s, { ...idle, aimX: 400 + Math.cos(-3) * 100, aimY: 300 + Math.sin(-3) * 100 }, 0.01, arena);
+  assert.ok(s.angle > 3); // turns positive (through pi), not the long way back
+});
+
+test('keyboard rotate overrides mouse aim', () => {
+  const s = createShip(400, 300);
+  s.angle = 0;
+  updateShip(s, { ...idle, rotate: -1, aimX: 400, aimY: 700 }, 0.1, arena);
+  assert.ok(Math.abs(s.angle + SHIP.turnRate * 0.1) < 1e-9); // followed keys, not cursor
+});
+
+test('no aim fields means angle is untouched (backward compatible)', () => {
+  const s = createShip(400, 300);
+  s.angle = 1.23;
+  updateShip(s, idle, 0.1, arena);
+  assert.equal(s.angle, 1.23);
+});

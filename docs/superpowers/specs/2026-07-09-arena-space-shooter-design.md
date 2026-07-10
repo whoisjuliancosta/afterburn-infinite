@@ -21,13 +21,13 @@ A browser-based 360° arena space shooter that rewards pilot skill. Enemies swar
 
 | Input | Action |
 |---|---|
-| `A` / `←` | Rotate counter-clockwise |
-| `D` / `→` | Rotate clockwise |
+| Mouse position | Aim: the nose chases the cursor at the ship's turn rate (change post-v1, 2026-07-10) |
+| `A` / `←`, `D` / `→` | Optional keyboard turn override (wins over mouse aim while held) |
 | `W` / `↑` | Thrust in facing direction |
 | Mouse button (hold) | Full-auto fire at base fire rate, slight bullet spread |
 | Mouse button (tap) | Semi-auto: fires instantly per click, perfect accuracy; fast tapping can slightly exceed full-auto rate |
 
-- Fire direction is always the ship's nose. The mouse is a trigger only — it does not aim.
+- Fire direction is always the ship's nose. The mouse both aims (nose chases cursor, rate-limited) and triggers.
 - The tap-vs-hold split is a core skill mechanic: spray (hold) when swarmed, precision-tap when it counts.
 - Semi-auto has a minimum cooldown of ~80% of the full-auto interval, and that cooldown scales down with fire-rate upgrades — tapping always retains its slight edge but can never trivialize Rapid Fire.
 
