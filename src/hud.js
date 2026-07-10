@@ -7,6 +7,11 @@ import { ROCKET } from './config.js';
 import { SPRITES } from './sprites.js';
 
 const FONT = 'monospace';
+// Bundled OFL display font (declared @font-face in index.html). Falls back to
+// monospace automatically when assets/fonts is missing, so the game stays fully
+// playable. Used for the baked title graphic and a few big headers; body text
+// stays FONT.
+const TITLE_FONT = "'Audiowide', monospace";
 const INK = '#e8e6d8';
 const DIM = '#8a879a';
 const ACCENT = '#ffd75e';
@@ -90,8 +95,8 @@ export function drawHud(g, w, run, ship, rockets = null) {
     g.textBaseline = 'top';
   }
 
-  // Wave (top-center)
-  g.font = `${Math.round(1.5 * u)}px ${FONT}`;
+  // Wave (top-center) — display font, degrades to monospace.
+  g.font = `${Math.round(1.35 * u)}px ${TITLE_FONT}`;
   g.fillStyle = DIM;
   g.textAlign = 'center';
   g.fillText(`WAVE ${run.wave}`, w / 2, margin);
@@ -395,14 +400,198 @@ function drawPicker(g, w, h, paint) {
   g.textBaseline = 'top';
 }
 
+// -------------------------------------------------------------- MENU BAKERY ---
+// The title wordmark and background flourishes are pre-baked into offscreen
+// canvases ONCE per size / font-ready change (never per frame — drawMenu only
+// blits them). shadowBlur is allowed HERE, at bake time, never in a frame loop.
+// The cache is rebuilt when width/height change (resize) or the display font
+// finishes loading. Everything degrades to monospace + plain fills with assets/
+// missing, so the menu stays legible and error-free.
+const TITLE_TEXT = 'AFTERBURN INFINITE';
+let menuBake = null;          // { w, h, font, title:{canvas,w,h}, planet, vignette }
+let titleFontReady = false;   // flipped by main once document.fonts settles
+
+// main.js calls this when the bundled display font resolves (or fails) so the
+// title re-bakes with the real glyphs instead of the monospace first paint.
+export function setTitleFontReady(ready = true) {
+  titleFontReady = ready;
+  menuBake = null;            // force a re-bake on the next drawMenu
+}
+
+function makeCanvas(cw, ch) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(cw));
+  c.height = Math.max(1, Math.ceil(ch));
+  return c;
+}
+
+// Pre-bake the title wordmark: a baked twin-color glow, a thin chromatic split,
+// a gradient fill (cyan edges → white-orange core, afterburner vibe) and a
+// tapered underline flourish. Returns { canvas, w, h } with content centered.
+function bakeTitle(w) {
+  let fs = Math.max(18, Math.round(Math.min(w * 0.072, 88)));
+  const scratch = makeCanvas(8, 8).getContext('2d');
+  scratch.font = `${fs}px ${TITLE_FONT}`;
+  let tw = scratch.measureText(TITLE_TEXT).width;
+  const maxW = w * 0.9;
+  if (tw > maxW) {
+    fs = Math.max(14, Math.floor(fs * maxW / tw));
+    scratch.font = `${fs}px ${TITLE_FONT}`;
+    tw = scratch.measureText(TITLE_TEXT).width;
+  }
+  const blur = Math.max(8, fs * 0.5);
+  const pad = Math.ceil(blur) + Math.round(fs * 0.4);
+  const cw = tw + pad * 2;
+  const ch = fs * 1.7 + pad * 2;
+  const c = makeCanvas(cw, ch);
+  const t = c.getContext('2d');
+  const cx = cw / 2, cy = ch / 2 - fs * 0.12;
+  t.textAlign = 'center';
+  t.textBaseline = 'middle';
+  t.font = `${fs}px ${TITLE_FONT}`;
+
+  // Baked glow underlayer (warm + cyan). shadowBlur is legal at bake time only.
+  t.save();
+  t.shadowColor = '#ff7a1f';
+  t.shadowBlur = blur;
+  t.fillStyle = 'rgba(255,150,60,0.9)';
+  t.fillText(TITLE_TEXT, cx, cy);
+  t.shadowColor = '#4fe0ff';
+  t.shadowBlur = blur * 0.8;
+  t.fillStyle = 'rgba(120,230,255,0.6)';
+  t.fillText(TITLE_TEXT, cx, cy);
+  t.restore();
+
+  // Thin chromatic split behind the main fill.
+  t.globalAlpha = 0.45;
+  t.fillStyle = '#3fd0ff';
+  t.fillText(TITLE_TEXT, cx - 1.5, cy);
+  t.fillStyle = '#ff5a2f';
+  t.fillText(TITLE_TEXT, cx + 1.5, cy);
+  t.globalAlpha = 1;
+
+  // Main gradient fill: cyan edges, white-orange core.
+  const grad = t.createLinearGradient(0, cy - fs * 0.62, 0, cy + fs * 0.62);
+  grad.addColorStop(0.00, '#4fe0ff');
+  grad.addColorStop(0.30, '#fff6e8');
+  grad.addColorStop(0.52, '#ffc061');
+  grad.addColorStop(0.74, '#ff7a1f');
+  grad.addColorStop(1.00, '#3fd0ff');
+  t.fillStyle = grad;
+  t.fillText(TITLE_TEXT, cx, cy);
+
+  // Tapered underline wings under the wordmark.
+  const uy = cy + fs * 0.76;
+  const half = tw / 2;
+  const ug = t.createLinearGradient(cx - half, uy, cx + half, uy);
+  ug.addColorStop(0.0, 'rgba(79,224,255,0)');
+  ug.addColorStop(0.5, 'rgba(255,150,60,0.85)');
+  ug.addColorStop(1.0, 'rgba(79,224,255,0)');
+  t.strokeStyle = ug;
+  t.lineWidth = Math.max(1.5, fs * 0.03);
+  t.beginPath();
+  t.moveTo(cx - half, uy);
+  t.lineTo(cx + half, uy);
+  t.stroke();
+
+  return { canvas: c, w: cw, h: ch };
+}
+
+// Dim planet/horizon glow rising from the bottom center + a faint lit limb arc.
+function bakePlanet(w, h) {
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  const cx = w / 2, cy = h * 1.06;
+  const r1 = Math.max(w, h) * 0.62;
+  const grad = g.createRadialGradient(cx, cy, r1 * 0.2, cx, cy, r1);
+  grad.addColorStop(0.0, 'rgba(90,190,225,0.30)');
+  grad.addColorStop(0.45, 'rgba(60,120,165,0.15)');
+  grad.addColorStop(1.0, 'rgba(20,40,70,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(150,225,255,0.16)';
+  g.lineWidth = Math.max(2, h * 0.006);
+  g.beginPath();
+  g.arc(cx, cy, r1 * 0.72, Math.PI, Math.PI * 2);
+  g.stroke();
+  return c;
+}
+
+// Soft vignette darkening the screen edges so the UI reads against it.
+function bakeVignette(w, h) {
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(w / 2, h * 0.42, Math.min(w, h) * 0.30, w / 2, h * 0.5, Math.max(w, h) * 0.75);
+  grad.addColorStop(0, 'rgba(5,5,10,0)');
+  grad.addColorStop(1, 'rgba(3,3,8,0.6)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  return c;
+}
+
+// Cached bake keyed on (w, h, fontReady) — rebuilt on resize or font-ready only,
+// never per frame.
+function ensureMenuBake(w, h) {
+  if (menuBake && menuBake.w === w && menuBake.h === h && menuBake.font === titleFontReady) return menuBake;
+  menuBake = {
+    w, h, font: titleFontReady,
+    title: bakeTitle(w),
+    planet: bakePlanet(w, h),
+    vignette: bakeVignette(w, h),
+  };
+  return menuBake;
+}
+
+// Two ship silhouettes drifting slowly behind the UI (menu-only cost). Reuses
+// the menu-preview sprite at very low alpha; skipped if art isn't ready.
+function drawMenuShips(g, w, h, t) {
+  const spr = SPRITES.shipPreview;
+  const img = Array.isArray(spr) ? spr[0] : spr;
+  if (!img) return;
+  g.save();
+  g.imageSmoothingEnabled = false;
+  const lanes = [
+    { y: h * 0.20, speed: 0.045, scale: 2.4, alpha: 0.07, phase: 0.0, dir: 1 },
+    { y: h * 0.66, speed: 0.030, scale: 3.2, alpha: 0.05, phase: 0.5, dir: -1 },
+  ];
+  for (const ln of lanes) {
+    const iw = img.width * ln.scale, ih = img.height * ln.scale;
+    const span = w + iw * 2;
+    const p = ((t * ln.speed + ln.phase) % 1 + 1) % 1;
+    const x = ln.dir > 0 ? -iw + p * span : w + iw - p * span;
+    g.globalAlpha = ln.alpha;
+    g.save();
+    g.translate(x, ln.y);
+    g.rotate(ln.dir > 0 ? Math.PI / 2 : -Math.PI / 2); // nose-up sprite → point along travel
+    g.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+    g.restore();
+  }
+  g.restore();
+  g.globalAlpha = 1;
+}
+
 // ------------------------------------------------------------------ MENU ------
-export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
+export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
   const u = Math.max(12, Math.round(w / 90));
+  const bake = ensureMenuBake(w, h);
+
+  // Background flourishes (menu-only): horizon glow, drifting ship silhouettes,
+  // soft vignette. The starfield is already drawn behind by main.
+  g.drawImage(bake.planet, 0, 0);
+  drawMenuShips(g, w, h, t);
+  g.drawImage(bake.vignette, 0, 0);
+
+  // Pre-baked title graphic, blitted with a cheap idle hover + shimmer — no
+  // per-frame re-bake. Centered on h*0.28.
+  const tt = bake.title;
+  const dy = Math.sin(t * 1.2) * 3;
+  g.save();
+  g.globalAlpha = 0.92 + 0.08 * Math.sin(t * 2);
+  g.drawImage(tt.canvas, Math.round(w / 2 - tt.w / 2), Math.round(h * 0.28 - tt.h / 2 + dy));
+  g.restore();
+
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillStyle = INK;
-  g.font = `bold 42px ${FONT}`;
-  g.fillText('AFTERBURN INFINITE', w / 2, h * 0.28);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
   g.fillText('W thrust · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
@@ -438,7 +627,7 @@ export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], 
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = '#e6743e';
-  g.font = `bold 36px ${FONT}`;
+  g.font = `32px ${TITLE_FONT}`;
   g.fillText('SHIP DESTROYED', w / 2, h * 0.15);
   g.fillStyle = INK;
   g.font = `20px ${FONT}`;

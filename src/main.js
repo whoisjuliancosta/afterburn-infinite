@@ -16,7 +16,7 @@ import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
 import { initAudio, sfxShot, sfxBoost, sfxRocket, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
-import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing } from './hud.js';
+import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing, setTitleFontReady } from './hud.js';
 import { createInput } from './input.js';
 
 const canvas = document.getElementById('game');
@@ -453,7 +453,7 @@ function render() {
     return;
   }
 
-  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board); return; }
+  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board, clock); return; }
 
   g.save();
   if (fx.shake > 0) g.translate((Math.random() - 0.5) * fx.shake, (Math.random() - 0.5) * fx.shake);
@@ -788,6 +788,15 @@ function frame(t) {
 // Boot: render a LOADING frame until every asset settles (per-slot failures are
 // tolerated), then rebind sprites to pack art and enter the menu (or a dev
 // screen). A menu click before ASSETS.ready can't land — mode is 'loading'.
+// Load the bundled display font, then re-bake the title with real glyphs. Guard
+// for engines without the Font Loading API; a 404 (assets/ missing) rejects and
+// leaves the monospace fallback bake — either way the menu never waits forever.
+if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+  document.fonts.load("16px 'Audiowide'")
+    .then(() => setTitleFontReady(true))
+    .catch(() => { /* font unavailable — monospace fallback stands */ });
+}
+
 const devScreen = new URLSearchParams(location.search).get('screen');
 loadAssets().then(() => {
   initSprites(paint); // rebind SPRITES to pack art now that ASSETS.ready is true
