@@ -39,9 +39,10 @@ export function createInput(canvas) {
   return {
     poll() {
       const snap = {
-        rotate: (down.has('KeyD') || down.has('ArrowRight') ? 1 : 0)
-              - (down.has('KeyA') || down.has('ArrowLeft') ? 1 : 0),
-        thrust: down.has('KeyW') || down.has('ArrowUp'),
+        moveX: (down.has('KeyD') || down.has('ArrowRight') ? 1 : 0)
+             - (down.has('KeyA') || down.has('ArrowLeft') ? 1 : 0),
+        moveY: (down.has('KeyS') || down.has('ArrowDown') ? 1 : 0)
+             - (down.has('KeyW') || down.has('ArrowUp') ? 1 : 0),
         held, taps, clicked, clickX, clickY,
         aimX: mouseX, aimY: mouseY,
         key1: down.has('Digit1'), key2: down.has('Digit2'), key3: down.has('Digit3'),

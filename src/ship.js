@@ -1,6 +1,6 @@
 // src/ship.js
 import { SHIP, GUN, DASH } from './config.js';
-import { TAU, angleDiff } from './utils.js';
+import { TAU } from './utils.js';
 
 export function createShip(x, y) {
   return {
@@ -20,12 +20,17 @@ export function createShip(x, y) {
 
 // Consume a dash charge: impulse along the nose, clamp to the dash speed cap,
 // grant iframes (never shortening a longer window), start the recharge if idle.
-export function tryDash(ship) {
+export function tryDash(ship, dirX = 0, dirY = 0) {
   if (ship.dash.charges <= 0) return false;
   ship.dash.charges -= 1;
 
-  ship.vx += Math.cos(ship.angle) * DASH.impulse;
-  ship.vy += Math.sin(ship.angle) * DASH.impulse;
+  // Dash follows movement input when there is one, else the nose.
+  let dx = dirX, dy = dirY;
+  const dm = Math.hypot(dx, dy);
+  if (dm > 0) { dx /= dm; dy /= dm; }
+  else { dx = Math.cos(ship.angle); dy = Math.sin(ship.angle); }
+  ship.vx += dx * DASH.impulse;
+  ship.vy += dy * DASH.impulse;
   const cap = SHIP.maxSpeed * ship.mods.engine * DASH.speedCapMult;
   const sp = Math.hypot(ship.vx, ship.vy);
   if (sp > cap) { ship.vx *= cap / sp; ship.vy *= cap / sp; }
@@ -46,20 +51,18 @@ export function creditDash(ship, damage) {
 }
 
 export function updateShip(ship, input, dt, arena) {
-  if (input.rotate) {
-    ship.angle += input.rotate * SHIP.turnRate * dt; // keyboard override
-  } else if (input.aimX != null) {
-    // nose chases the cursor at turn rate — aim is a skill, not a snap
-    const want = Math.atan2(input.aimY - ship.y, input.aimX - ship.x);
-    const diff = angleDiff(ship.angle, want);
-    const step = SHIP.turnRate * dt;
-    ship.angle += Math.abs(diff) <= step ? diff : Math.sign(diff) * step;
+  // Twin-stick: the nose tracks the cursor instantly; movement is fully
+  // decoupled from aim (WASD thrusts in screen directions).
+  if (input.aimX != null) {
+    ship.angle = Math.atan2(input.aimY - ship.y, input.aimX - ship.x);
   }
 
-  if (input.thrust) {
+  const mx = input.moveX || 0, my = input.moveY || 0;
+  if (mx || my) {
+    const m = Math.hypot(mx, my);
     const a = SHIP.thrust * ship.mods.engine;
-    ship.vx += Math.cos(ship.angle) * a * dt;
-    ship.vy += Math.sin(ship.angle) * a * dt;
+    ship.vx += (mx / m) * a * dt;
+    ship.vy += (my / m) * a * dt;
   }
 
   const damp = Math.exp(-SHIP.friction * dt);
