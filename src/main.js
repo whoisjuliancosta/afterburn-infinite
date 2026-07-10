@@ -16,7 +16,8 @@ import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
 import { initAudio, sfxShot, sfxBoost, sfxRocket, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
-import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing } from './hud.js';
+import { drawHud, drawMenu, drawGameOver, drawOffers, offerRects, paintRects, drawBossBar, drawPause, drawFieldRing, setTitleFontReady, drawLegend, legendRect } from './hud.js';
+import { legendRows, bossRow, pickupRows } from './legend.js';
 import { createInput } from './input.js';
 
 const canvas = document.getElementById('game');
@@ -56,7 +57,7 @@ initSprites(paint); // code-gen fallback now; rebound to pack art once assets lo
 const input = createInput(canvas);
 const rng = makeRng(Date.now());
 
-let mode = 'loading'; // 'loading' | 'menu' | 'playing' | 'paused' | 'upgrade' | 'gameover'
+let mode = 'loading'; // 'loading' | 'menu' | 'legend' | 'playing' | 'paused' | 'upgrade' | 'gameover'
 // Input lockout after a screen transition, so click-spam from combat can't
 // select an upgrade (or restart a run) the instant the screen appears.
 let uiLockout = 0;
@@ -186,12 +187,13 @@ function collectGem(gem) {
   return applyGem(run, ship, gem.kind);
 }
 
-// Map an applyGem result to a pickup floater: blue → '+10%' cyan; red at full HP
-// (heart lost) → 'FULL'; any other red → '+10% ♥' red.
+// Map an applyGem result to a pickup floater. Percentages derive from config so
+// balance tweaks stay single-sourced: blue → `+25%` cyan; red completing a heart
+// at full HP (grown container) → `+1 MAX ♥`; any other red → `+10% ♥` red.
 function gemFloater(res) {
-  if (res.kind === 'blue') return { text: '+10%', kind: 'gem' };
-  if (res.full) return { text: 'FULL', kind: 'heart' };
-  return { text: '+10% ♥', kind: 'heart' };
+  if (res.kind === 'blue') return { text: `+${Math.round(GEMS.boostFill * 100)}%`, kind: 'gem' };
+  if (res.grown) return { text: '+1 MAX ♥', kind: 'heart' };
+  return { text: `+${Math.round(GEMS.heartFill * 100)}% ♥`, kind: 'heart' };
 }
 
 function tickPlaying(snap, dt) {
@@ -396,6 +398,13 @@ function handlePaintClick(snap) {
   return false;
 }
 
+// True when a menu click landed on the LEGEND button (opens the paytable).
+function hitLegendButton(snap) {
+  const r = legendRect(arena.w, arena.h);
+  return snap.clickX >= r.x && snap.clickX <= r.x + r.w &&
+         snap.clickY >= r.y && snap.clickY <= r.y + r.h;
+}
+
 // ------------------------------------------------------------- rendering ------
 const frameIndex = () => Math.floor(clock * 6) % 2; // 6fps 2-frame idle flip
 
@@ -452,7 +461,8 @@ function render() {
     return;
   }
 
-  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board); return; }
+  if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board, clock); return; }
+  if (mode === 'legend') { drawLegend(g, arena.w, arena.h, legendRows(), bossRow(), pickupRows()); return; }
 
   g.save();
   if (fx.shake > 0) g.translate((Math.random() - 0.5) * fx.shake, (Math.random() - 0.5) * fx.shake);
@@ -733,6 +743,10 @@ function seedDevScreen(which) {
     stressSustain();          // seed the population; frame() re-tops it each tick
     floaters.list = [];
     mode = 'playing';
+  } else if (which === 'legend') {
+    // Paytable is pure static data (legendRows/bossRow/pickupRows) — no run state
+    // needed; just render the screen for the headless screenshot.
+    mode = 'legend';
   } else {
     run.score = 12450; run.wave = 9;
     // Seed a board so the game-over leaderboard + placed highlight render.
@@ -755,8 +769,16 @@ function frame(t) {
   updateStarfield(starfield, dt);
   const snap = input.poll();
 
-  if (mode === 'menu' && snap.clicked) {
-    if (!handlePaintClick(snap)) { initAudio(); startRun(); }
+  if (mode === 'menu' && snap.legendPressed) {
+    mode = 'legend'; // L opens the paytable
+  }
+  else if (mode === 'menu' && snap.clicked) {
+    if (hitLegendButton(snap)) mode = 'legend';
+    else if (!handlePaintClick(snap)) { initAudio(); startRun(); }
+  }
+  else if (mode === 'legend') {
+    // L / Esc / P / click anywhere returns to the menu.
+    if (snap.legendPressed || snap.pausePressed || snap.clicked) mode = 'menu';
   }
   else if (mode === 'playing') {
     if (stressMode) stressSustain(); // re-saturate the worst-case scene before the tick
@@ -787,10 +809,19 @@ function frame(t) {
 // Boot: render a LOADING frame until every asset settles (per-slot failures are
 // tolerated), then rebind sprites to pack art and enter the menu (or a dev
 // screen). A menu click before ASSETS.ready can't land — mode is 'loading'.
+// Load the bundled display font, then re-bake the title with real glyphs. Guard
+// for engines without the Font Loading API; a 404 (assets/ missing) rejects and
+// leaves the monospace fallback bake — either way the menu never waits forever.
+if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+  document.fonts.load("16px 'Audiowide'")
+    .then(() => setTitleFontReady(true))
+    .catch(() => { /* font unavailable — monospace fallback stands */ });
+}
+
 const devScreen = new URLSearchParams(location.search).get('screen');
 loadAssets().then(() => {
   initSprites(paint); // rebind SPRITES to pack art now that ASSETS.ready is true
-  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss' || devScreen === 'stress') seedDevScreen(devScreen);
+  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss' || devScreen === 'stress' || devScreen === 'legend') seedDevScreen(devScreen);
   else mode = 'menu';
 });
 requestAnimationFrame(frame);

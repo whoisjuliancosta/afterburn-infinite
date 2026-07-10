@@ -9,6 +9,7 @@ export const CAPS = { fireRate: 9, engine: 6, bulletSpeed: 7.5, pierce: 15, spre
 export const SHIP = {
   radius: 18,
   thrust: 680,       // px/s^2 (twin-stick: terminal speed thrust/friction exceeds the cap)
+  reverseMult: 0.6,  // reverse (S/↓) accel as a fraction of forward thrust — keeps backing off from dominating
   maxSpeed: 260,     // px/s
   friction: 2.4,     // exponential damping per second — light drift, responsive stops
   recoil: 18,        // px/s pushback per shot
@@ -61,6 +62,6 @@ export const WAVE = {
 
 export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5), capped
 
-export const GEMS = { lifetime: 6, magnetRadius: 200, magnetAccel: 900, maxSpeed: 480, radius: 5, blueChance: 0.35, redChance: 0.08, boostFill: 0.10, heartFill: 0.10 };
+export const GEMS = { lifetime: 6, magnetRadius: 200, magnetAccel: 900, maxSpeed: 480, radius: 5, blueChance: 0.35, redChance: 0.08, boostFill: 0.25, heartFill: 0.10 };
 
 export const ROCKET = { cooldown: 5, speed: 360, damage: 8, aoeRadius: 110, radius: 6, range: 900, reloadFloor: 0.75 };

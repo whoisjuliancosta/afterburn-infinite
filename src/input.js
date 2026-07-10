@@ -9,11 +9,13 @@ export function createInput(canvas) {
     mouseY = e.offsetY;
   });
 
-  let pausePending = false, rocketPending = false;
+  let pausePending = false, rocketPending = false, legendPending = false;
 
   window.addEventListener('keydown', e => {
     // edge-triggered pause: Esc or P, latch only on the first press
     if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) pausePending = true;
+    // edge-triggered legend toggle: L, latch on first press (held L can't strobe)
+    if (e.code === 'KeyL' && !e.repeat) legendPending = true;
     down.add(e.code);
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   });
@@ -40,6 +42,7 @@ export function createInput(canvas) {
     poll() {
       const snap = {
         thrust: down.has('KeyW') || down.has('ArrowUp'),
+        reverse: down.has('KeyS') || down.has('ArrowDown'),
         boosting: down.has('ShiftLeft') || down.has('ShiftRight'), // continuous while Shift is held
         held, taps, clicked, clickX, clickY,
         aimX: mouseX, aimY: mouseY,
@@ -47,11 +50,13 @@ export function createInput(canvas) {
         keyR: down.has('KeyR'),
         pausePressed: pausePending,
         rocketPressed: rocketPending,
+        legendPressed: legendPending,
       };
       taps = 0;
       clicked = false;
       pausePending = false;
       rocketPending = false;
+      legendPending = false;
       return snap;
     },
   };

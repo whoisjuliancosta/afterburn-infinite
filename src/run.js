@@ -44,8 +44,10 @@ export function hitPlayer(run, ship) {
 // hit/heal paths already make: blue tops up the boost meter (clamped to the
 // ship's current unit capacity, overflow lost); red accrues toward the next
 // heart and, on completing one, resets the accumulator (subtract 1) and heals
-// one hp capped at maxHp (overflow at full HP is consumed but lost). Returns a
-// small result {kind, healed?, full?, gained?} the caller turns into floaters.
+// one hp. When a heart completes at full HP the overheal grows a NEW heart
+// container (maxHp += 1) and fills it — red gems are never wasted (spec v5.2 T1),
+// no cap on maxHp. Returns a small result {kind, healed?, grown?, gained?} the
+// caller turns into floaters.
 export function applyGem(run, ship, kind) {
   if (kind === 'blue') {
     ship.boost.meter = Math.min(ship.boost.units, ship.boost.meter + GEMS.boostFill);
@@ -62,7 +64,11 @@ export function applyGem(run, ship, kind) {
       ship.hp += 1;
       res.healed = true;
     } else {
-      res.full = true; // full HP: progress consumed, heart lost
+      // Overheal at full HP: grow a fresh container and fill it. Unbounded.
+      ship.maxHp += 1;
+      ship.hp = ship.maxHp;
+      res.healed = true;
+      res.grown = true;
     }
   }
   return res;

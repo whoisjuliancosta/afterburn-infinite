@@ -44,6 +44,13 @@ export function updateShip(ship, input, dt, arena) {
     ship.vy += sin * a * dt;
   }
 
+  // S / ↓ backs off opposite the nose at reverseMult of forward thrust. Shares
+  // `a`, so Engine upgrades and adrenaline apply; boost (below) does NOT scale it.
+  if (input.reverse) {
+    ship.vx -= cos * a * SHIP.reverseMult * dt;
+    ship.vy -= sin * a * SHIP.reverseMult * dt;
+  }
+
   // Continuous boost: while Space is held and the meter has charge, drain it,
   // add extra thrust toward the nose (independent of W) and lift the speed cap
   // for this frame. ship.boosting is true only while actually draining.

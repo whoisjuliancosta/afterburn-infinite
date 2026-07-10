@@ -7,6 +7,11 @@ import { ROCKET } from './config.js';
 import { SPRITES } from './sprites.js';
 
 const FONT = 'monospace';
+// Bundled OFL display font (declared @font-face in index.html). Falls back to
+// monospace automatically when assets/fonts is missing, so the game stays fully
+// playable. Used for the baked title graphic and a few big headers; body text
+// stays FONT.
+const TITLE_FONT = "'Audiowide', monospace";
 const INK = '#e8e6d8';
 const DIM = '#8a879a';
 const ACCENT = '#ffd75e';
@@ -90,8 +95,8 @@ export function drawHud(g, w, run, ship, rockets = null) {
     g.textBaseline = 'top';
   }
 
-  // Wave (top-center)
-  g.font = `${Math.round(1.5 * u)}px ${FONT}`;
+  // Wave (top-center) — display font, degrades to monospace.
+  g.font = `${Math.round(1.35 * u)}px ${TITLE_FONT}`;
   g.fillStyle = DIM;
   g.textAlign = 'center';
   g.fillText(`WAVE ${run.wave}`, w / 2, margin);
@@ -99,20 +104,51 @@ export function drawHud(g, w, run, ship, rockets = null) {
 
   // Hearts (top-right)
   const rightX = w - margin;
-  if (SPRITES.heart) {
-    const heartH = Math.round(1.6 * u);
+  if (SPRITES.heart && SPRITES.heartEmpty) {
     const hs = SPRITES.heart;
-    const heartW = Math.round(heartH * (hs.width / hs.height));
-    const gap = Math.round(u * 0.25);
-    const step = heartW + gap;
-    for (let i = 0; i < ship.maxHp; i++) {
-      const x = rightX - (ship.maxHp - i) * step;
-      const spr = i < ship.hp ? SPRITES.heart : SPRITES.heartEmpty;
-      g.drawImage(spr, x, margin, heartW, heartH);
+    const aspect = hs.width / hs.height;
+    // In-progress heart: at full HP an extra empty container previews the next
+    // heart filling — overheal grows containers (v5.2), so red gems keep counting.
+    const progress = Math.max(0, Math.min(1, run.heartProgress || 0));
+    const inProgress = ship.hp >= ship.maxHp && progress > 0;
+    const slots = ship.maxHp + (inProgress ? 1 : 0);
+    const hasShield = ship.shield.owned && SPRITES.shieldHeart;
+
+    // Size the row, shrinking when unbounded hearts would overflow ~30% of the
+    // screen width (keeps clear of the centered wave label). Min height 8px.
+    const sizeFor = (h) => {
+      const hw = h * aspect;
+      const gp = Math.max(2, h * 0.15);
+      const st = hw + gp;
+      const rowW = slots * st + (hasShield ? st + u * 0.3 : 0);
+      return { hw, gp, st, rowW };
+    };
+    let heartH = Math.round(1.6 * u);
+    let s = sizeFor(heartH);
+    const maxRowW = w * 0.30;
+    if (s.rowW > maxRowW) {
+      heartH = Math.max(8, heartH * (maxRowW / s.rowW));
+      s = sizeFor(heartH);
     }
-    // Shield heart to the left of the hearts row when owned
-    if (ship.shield.owned && SPRITES.shieldHeart) {
-      const x = rightX - ship.maxHp * step - step - Math.round(u * 0.3);
+    heartH = Math.round(heartH);
+    const heartW = Math.round(s.hw);
+    const gap = Math.max(2, Math.round(s.gp));
+    const step = heartW + gap;
+
+    for (let i = 0; i < slots; i++) {
+      const x = rightX - (slots - i) * step;
+      if (i < ship.hp) {
+        g.drawImage(SPRITES.heart, x, margin, heartW, heartH); // full
+      } else {
+        g.drawImage(SPRITES.heartEmpty, x, margin, heartW, heartH); // empty
+        // The first empty container shows fractional progress toward the next
+        // heart (also the in-progress extra slot when already at full HP).
+        if (i === ship.hp) fillHeart(g, SPRITES.heart, x, margin, heartW, heartH, progress);
+      }
+    }
+    // Shield heart to the left of the whole row (incl. in-progress slot) when owned
+    if (hasShield) {
+      const x = rightX - (slots + 1) * step - Math.round(u * 0.3);
       g.globalAlpha = ship.shield.up ? 1 : 0.35;
       g.drawImage(SPRITES.shieldHeart, x, margin, heartW, heartH);
       g.globalAlpha = 1;
@@ -153,6 +189,17 @@ export function drawHud(g, w, run, ship, rockets = null) {
     }
   }
   g.textAlign = 'left';
+}
+
+// Partial bottom-up heart fill: overlay the bottom `frac` slice of the full
+// heart sprite onto an already-drawn empty container. Source-rect drawImage —
+// no per-frame canvases, no clip/save churn.
+function fillHeart(g, full, x, y, w, h, frac) {
+  frac = Math.max(0, Math.min(1, frac));
+  if (frac <= 0) return;
+  const sh = full.height * frac;
+  const dh = h * frac;
+  g.drawImage(full, 0, full.height - sh, full.width, sh, x, y + h - dh, w, dh);
 }
 
 // Boost bar: dark track split into `units` segments, cyan fill shows the meter
@@ -211,17 +258,60 @@ function drawRocketCooldown(g, cx, cy, size, cooldown) {
 }
 
 // ------------------------------------------------------------- FIELD RING ------
-// Faint cyan ring at the gem-magnet radius around the ship so the pull zone is
-// visible (spec C). ~0.08 alpha with a gentle pulse driven by the `t` clock.
+// Gem-magnet force field around the ship (spec v5.2 T2): two counter-rotating
+// dashed arcs + inward-drifting pull ticks so it reads as a pull zone, not a
+// static circle. Deterministic in `t`, no rng, no per-frame canvases, no
+// shadowBlur. Subtle: alpha in the 0.06–0.16 band (ticks peak ~0.25 at spawn).
 export function drawFieldRing(g, ship, radius, t = 0) {
   const pulse = 1 + Math.sin(t * 1.6) * 0.02;
+  const wave = Math.sin(t * 1.6) * 0.5 + 0.5; // 0..1
+  const cx = ship.x, cy = ship.y;
   g.save();
-  g.globalAlpha = 0.08 + 0.02 * (Math.sin(t * 1.6) * 0.5 + 0.5);
   g.strokeStyle = '#5fe8ff';
+
+  // Outer arc: rotates one way. Inner arc (0.94r): rotates the other way.
+  g.lineWidth = 1.5;
+  g.globalAlpha = 0.10 + 0.06 * wave;      // 0.10..0.16
+  g.setLineDash([14, 22]);
+  g.lineDashOffset = -t * 26;
+  g.beginPath();
+  g.arc(cx, cy, radius * pulse, 0, TAU);
+  g.stroke();
+
+  g.lineWidth = 1;
+  g.globalAlpha = 0.06 + 0.05 * wave;      // 0.06..0.11
+  g.setLineDash([6, 26]);
+  g.lineDashOffset = t * 34;               // opposite direction
+  g.beginPath();
+  g.arc(cx, cy, radius * 0.94 * pulse, 0, TAU);
+  g.stroke();
+
+  g.setLineDash([]);                       // reset dash before the ticks
+
+  // Inward-drifting pull ticks: 8 short radial segments, each cycling from the
+  // outer radius toward radius*0.55 and fading as they near the ship.
+  const TICKS = 8;
+  const R0 = radius * pulse;               // start radius (outer)
+  const R1 = radius * 0.55;                // end radius (inner)
+  const TICK_LEN = 10;
   g.lineWidth = 1.5;
   g.beginPath();
-  g.arc(ship.x, ship.y, radius * pulse, 0, TAU);
-  g.stroke();
+  for (let i = 0; i < TICKS; i++) {
+    const ang = (i / TICKS) * TAU;
+    const p = ((t * 0.45 + i / TICKS) % 1 + 1) % 1; // 0..1 drift phase
+    const r = R0 + (R1 - R0) * p;           // outer -> inner
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const rOuter = r;
+    const rInner = Math.max(R1, r - TICK_LEN);
+    // Fade in at spawn, fade out as it reaches the ship (peak ~0.25).
+    const fade = Math.sin(p * Math.PI);     // 0 at ends, 1 mid
+    g.globalAlpha = 0.05 + 0.20 * fade;
+    g.moveTo(cx + ca * rOuter, cy + sa * rOuter);
+    g.lineTo(cx + ca * rInner, cy + sa * rInner);
+    // Stroke per-tick so each keeps its own alpha.
+    g.stroke();
+    g.beginPath();
+  }
   g.restore();
   g.globalAlpha = 1;
 }
@@ -310,17 +400,201 @@ function drawPicker(g, w, h, paint) {
   g.textBaseline = 'top';
 }
 
+// -------------------------------------------------------------- MENU BAKERY ---
+// The title wordmark and background flourishes are pre-baked into offscreen
+// canvases ONCE per size / font-ready change (never per frame — drawMenu only
+// blits them). shadowBlur is allowed HERE, at bake time, never in a frame loop.
+// The cache is rebuilt when width/height change (resize) or the display font
+// finishes loading. Everything degrades to monospace + plain fills with assets/
+// missing, so the menu stays legible and error-free.
+const TITLE_TEXT = 'AFTERBURN INFINITE';
+let menuBake = null;          // { w, h, font, title:{canvas,w,h}, planet, vignette }
+let titleFontReady = false;   // flipped by main once document.fonts settles
+
+// main.js calls this when the bundled display font resolves (or fails) so the
+// title re-bakes with the real glyphs instead of the monospace first paint.
+export function setTitleFontReady(ready = true) {
+  titleFontReady = ready;
+  menuBake = null;            // force a re-bake on the next drawMenu
+}
+
+function makeCanvas(cw, ch) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(cw));
+  c.height = Math.max(1, Math.ceil(ch));
+  return c;
+}
+
+// Pre-bake the title wordmark: a baked twin-color glow, a thin chromatic split,
+// a gradient fill (cyan edges → white-orange core, afterburner vibe) and a
+// tapered underline flourish. Returns { canvas, w, h } with content centered.
+function bakeTitle(w) {
+  let fs = Math.max(18, Math.round(Math.min(w * 0.072, 88)));
+  const scratch = makeCanvas(8, 8).getContext('2d');
+  scratch.font = `${fs}px ${TITLE_FONT}`;
+  let tw = scratch.measureText(TITLE_TEXT).width;
+  const maxW = w * 0.9;
+  if (tw > maxW) {
+    fs = Math.max(14, Math.floor(fs * maxW / tw));
+    scratch.font = `${fs}px ${TITLE_FONT}`;
+    tw = scratch.measureText(TITLE_TEXT).width;
+  }
+  const blur = Math.max(8, fs * 0.5);
+  const pad = Math.ceil(blur) + Math.round(fs * 0.4);
+  const cw = tw + pad * 2;
+  const ch = fs * 1.7 + pad * 2;
+  const c = makeCanvas(cw, ch);
+  const t = c.getContext('2d');
+  const cx = cw / 2, cy = ch / 2 - fs * 0.12;
+  t.textAlign = 'center';
+  t.textBaseline = 'middle';
+  t.font = `${fs}px ${TITLE_FONT}`;
+
+  // Baked glow underlayer (warm + cyan). shadowBlur is legal at bake time only.
+  t.save();
+  t.shadowColor = '#ff7a1f';
+  t.shadowBlur = blur;
+  t.fillStyle = 'rgba(255,150,60,0.9)';
+  t.fillText(TITLE_TEXT, cx, cy);
+  t.shadowColor = '#4fe0ff';
+  t.shadowBlur = blur * 0.8;
+  t.fillStyle = 'rgba(120,230,255,0.6)';
+  t.fillText(TITLE_TEXT, cx, cy);
+  t.restore();
+
+  // Thin chromatic split behind the main fill.
+  t.globalAlpha = 0.45;
+  t.fillStyle = '#3fd0ff';
+  t.fillText(TITLE_TEXT, cx - 1.5, cy);
+  t.fillStyle = '#ff5a2f';
+  t.fillText(TITLE_TEXT, cx + 1.5, cy);
+  t.globalAlpha = 1;
+
+  // Main gradient fill: cyan edges, white-orange core.
+  const grad = t.createLinearGradient(0, cy - fs * 0.62, 0, cy + fs * 0.62);
+  grad.addColorStop(0.00, '#4fe0ff');
+  grad.addColorStop(0.30, '#fff6e8');
+  grad.addColorStop(0.52, '#ffc061');
+  grad.addColorStop(0.74, '#ff7a1f');
+  grad.addColorStop(1.00, '#3fd0ff');
+  t.fillStyle = grad;
+  t.fillText(TITLE_TEXT, cx, cy);
+
+  // Tapered underline wings under the wordmark.
+  const uy = cy + fs * 0.76;
+  const half = tw / 2;
+  const ug = t.createLinearGradient(cx - half, uy, cx + half, uy);
+  ug.addColorStop(0.0, 'rgba(79,224,255,0)');
+  ug.addColorStop(0.5, 'rgba(255,150,60,0.85)');
+  ug.addColorStop(1.0, 'rgba(79,224,255,0)');
+  t.strokeStyle = ug;
+  t.lineWidth = Math.max(1.5, fs * 0.03);
+  t.beginPath();
+  t.moveTo(cx - half, uy);
+  t.lineTo(cx + half, uy);
+  t.stroke();
+
+  return { canvas: c, w: cw, h: ch };
+}
+
+// Dim planet/horizon glow rising from the bottom center + a faint lit limb arc.
+function bakePlanet(w, h) {
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  const cx = w / 2, cy = h * 1.06;
+  const r1 = Math.max(w, h) * 0.62;
+  const grad = g.createRadialGradient(cx, cy, r1 * 0.2, cx, cy, r1);
+  grad.addColorStop(0.0, 'rgba(90,190,225,0.30)');
+  grad.addColorStop(0.45, 'rgba(60,120,165,0.15)');
+  grad.addColorStop(1.0, 'rgba(20,40,70,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(150,225,255,0.16)';
+  g.lineWidth = Math.max(2, h * 0.006);
+  g.beginPath();
+  g.arc(cx, cy, r1 * 0.72, Math.PI, Math.PI * 2);
+  g.stroke();
+  return c;
+}
+
+// Soft vignette darkening the screen edges so the UI reads against it.
+function bakeVignette(w, h) {
+  const c = makeCanvas(w, h);
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(w / 2, h * 0.42, Math.min(w, h) * 0.30, w / 2, h * 0.5, Math.max(w, h) * 0.75);
+  grad.addColorStop(0, 'rgba(5,5,10,0)');
+  grad.addColorStop(1, 'rgba(3,3,8,0.6)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  return c;
+}
+
+// Cached bake keyed on (w, h, fontReady) — rebuilt on resize or font-ready only,
+// never per frame.
+function ensureMenuBake(w, h) {
+  if (menuBake && menuBake.w === w && menuBake.h === h && menuBake.font === titleFontReady) return menuBake;
+  menuBake = {
+    w, h, font: titleFontReady,
+    title: bakeTitle(w),
+    planet: bakePlanet(w, h),
+    vignette: bakeVignette(w, h),
+  };
+  return menuBake;
+}
+
+// Two ship silhouettes drifting slowly behind the UI (menu-only cost). Reuses
+// the menu-preview sprite at very low alpha; skipped if art isn't ready.
+function drawMenuShips(g, w, h, t) {
+  const spr = SPRITES.shipPreview;
+  const img = Array.isArray(spr) ? spr[0] : spr;
+  if (!img) return;
+  g.save();
+  g.imageSmoothingEnabled = false;
+  const lanes = [
+    { y: h * 0.20, speed: 0.045, scale: 2.4, alpha: 0.07, phase: 0.0, dir: 1 },
+    { y: h * 0.66, speed: 0.030, scale: 3.2, alpha: 0.05, phase: 0.5, dir: -1 },
+  ];
+  for (const ln of lanes) {
+    const iw = img.width * ln.scale, ih = img.height * ln.scale;
+    const span = w + iw * 2;
+    const p = ((t * ln.speed + ln.phase) % 1 + 1) % 1;
+    const x = ln.dir > 0 ? -iw + p * span : w + iw - p * span;
+    g.globalAlpha = ln.alpha;
+    g.save();
+    g.translate(x, ln.y);
+    g.rotate(ln.dir > 0 ? Math.PI / 2 : -Math.PI / 2); // nose-up sprite → point along travel
+    g.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+    g.restore();
+  }
+  g.restore();
+  g.globalAlpha = 1;
+}
+
 // ------------------------------------------------------------------ MENU ------
-export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
+export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
   const u = Math.max(12, Math.round(w / 90));
+  const bake = ensureMenuBake(w, h);
+
+  // Background flourishes (menu-only): horizon glow, drifting ship silhouettes,
+  // soft vignette. The starfield is already drawn behind by main.
+  g.drawImage(bake.planet, 0, 0);
+  drawMenuShips(g, w, h, t);
+  g.drawImage(bake.vignette, 0, 0);
+
+  // Pre-baked title graphic, blitted with a cheap idle hover + shimmer — no
+  // per-frame re-bake. Centered on h*0.28.
+  const tt = bake.title;
+  const dy = Math.sin(t * 1.2) * 3;
+  g.save();
+  g.globalAlpha = 0.92 + 0.08 * Math.sin(t * 2);
+  g.drawImage(tt.canvas, Math.round(w / 2 - tt.w / 2), Math.round(h * 0.28 - tt.h / 2 + dy));
+  g.restore();
+
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillStyle = INK;
-  g.font = `bold 42px ${FONT}`;
-  g.fillText('AFTERBURN INFINITE', w / 2, h * 0.28);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('W thrust · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
+  g.fillText('W thrust · S reverse · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
   if (best > 0) {
     g.fillStyle = ACCENT;
@@ -334,6 +608,21 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
       g.fillText(`${i + 1}.  ${e.score}  ·  wave ${e.wave}`, w / 2, h * 0.60 + i * Math.round(1.6 * u));
     });
   }
+  // LEGEND / paytable button (below the leaderboard, above the ship picker).
+  const lr = legendRect(w, h);
+  g.fillStyle = '#16141f';
+  roundRect(g, lr.x, lr.y, lr.w, lr.h, Math.round(u * 0.4));
+  g.fill();
+  g.strokeStyle = ACCENT;
+  g.lineWidth = 1.5;
+  roundRect(g, lr.x, lr.y, lr.w, lr.h, Math.round(u * 0.4));
+  g.stroke();
+  g.fillStyle = ACCENT;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `${Math.round(1.1 * u)}px ${FONT}`;
+  g.fillText('LEGEND  (L)', w / 2, lr.y + lr.h / 2);
+
   drawPicker(g, w, h, paint);
   // Start prompt sits BELOW the swatch row: the ~3× ship preview above the
   // swatches occupies the old h*0.72 band and would strike the text through.
@@ -347,13 +636,238 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
   g.textBaseline = 'top';
 }
 
+// --------------------------------------------------------------- LEGEND -------
+// The LEGEND button on the menu (paytable entry). Single source of geometry for
+// drawing and click hit-testing, like paintRects. Sits below the '— click to
+// start —' prompt (h*0.685 put it behind the picker's 3× ship preview).
+export function legendRect(w, h) {
+  const u = Math.max(12, Math.round(w / 90));
+  const bw = Math.round(u * 9);
+  const bh = Math.round(u * 2.2);
+  const swatchH = Math.max(36, Math.round(u * 2.6)); // keep in sync with paintRects
+  return { x: Math.round(w / 2 - bw / 2), y: Math.round(h * 0.8 + swatchH + u * 3.4), w: bw, h: bh };
+}
+
+// A sprite (canvas or 2-frame array → frame 0) drawn to fit a box, aspect
+// preserved, nearest-neighbor, centered on (cx, cy). No-op when art is missing.
+function drawSpriteFit(g, spr, cx, cy, box) {
+  const img = Array.isArray(spr) ? spr[0] : spr;
+  if (!img || !img.width) return;
+  const nat = Math.max(img.width, img.height) || 1;
+  const s = box / nat;
+  const iw = img.width * s, ih = img.height * s;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(img, Math.round(cx - iw / 2), Math.round(cy - ih / 2), iw, ih);
+}
+
+// Centered multi-color single line. `segs` = [{text, color}]; drawn left-to-right
+// centered on cx at baseline-middle. Caller sets the font.
+function drawSegments(g, segs, cx, y) {
+  const total = segs.reduce((s, seg) => s + g.measureText(seg.text).width, 0);
+  let x = cx - total / 2;
+  const prevAlign = g.textAlign;
+  g.textAlign = 'left';
+  for (const seg of segs) {
+    g.fillStyle = seg.color;
+    g.fillText(seg.text, x, y);
+    x += g.measureText(seg.text).width;
+  }
+  g.textAlign = prevAlign;
+}
+
+// Legend / paytable screen (spec v5.2 T5): grid of enemy cards, a wide boss card,
+// a pickups strip. Static draws only (no per-frame baking) — menu-family cost,
+// nothing added to the play loop. Sizes to fit 1280×800 without scroll; scales
+// with the actual viewport via the `u` unit. Sprites via SPRITES (code fallbacks).
+export function drawLegend(g, w, h, rows, boss, pickups) {
+  const u = Math.max(12, Math.round(w / 90));
+  // Dark panel over the starfield (already drawn by main), like the upgrade screen.
+  g.fillStyle = 'rgba(11, 11, 18, 0.9)';
+  g.fillRect(0, 0, w, h);
+
+  // Header (display font) + subtitle.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = ACCENT;
+  g.font = `${Math.round(2.4 * u)}px ${TITLE_FONT}`;
+  g.fillText('PAYTABLE', w / 2, Math.round(h * 0.06));
+  g.fillStyle = DIM;
+  g.font = `${Math.round(1.0 * u)}px ${FONT}`;
+  g.fillText('all contact & enemy shots deal 1 ♥ · PAYS = gem/score value', w / 2, Math.round(h * 0.11));
+
+  // ---- Enemy card grid --------------------------------------------------------
+  const cols = 4;
+  const gridTop = Math.round(h * 0.145);
+  const gridBottom = Math.round(h * 0.55);
+  const gridLeft = Math.round(w * 0.05);
+  const gridRight = Math.round(w * 0.95);
+  const gridW = gridRight - gridLeft;
+  const gap = Math.round(u * 0.9);
+  const cardW = (gridW - gap * (cols - 1)) / cols;
+  const gridRows = Math.ceil(rows.length / cols);
+  const cardH = (gridBottom - gridTop - gap * (gridRows - 1)) / gridRows;
+
+  rows.forEach((r, i) => {
+    const col = i % cols, rowI = Math.floor(i / cols);
+    const x = gridLeft + col * (cardW + gap);
+    const y = gridTop + rowI * (cardH + gap);
+    drawEnemyCard(g, r, x, y, cardW, cardH, u);
+  });
+
+  // ---- Wide boss card ---------------------------------------------------------
+  const bx = gridLeft;
+  const bw = gridW;
+  const by = Math.round(h * 0.57);
+  const bh = Math.round(h * 0.215);
+  drawBossCard(g, boss, bx, by, bw, bh, u);
+
+  // ---- Pickups strip ----------------------------------------------------------
+  const py = Math.round(h * 0.80);
+  const ph = Math.round(h * 0.11);
+  drawPickupsStrip(g, pickups, gridLeft, py, gridW, ph, u);
+
+  // Footer hint.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = DIM;
+  g.font = `${Math.round(1.0 * u)}px ${FONT}`;
+  g.fillText('L · Esc · click to return', w / 2, Math.round(h * 0.955));
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+}
+
+function drawEnemyCard(g, r, x, y, cw, ch, u) {
+  g.fillStyle = '#16141f';
+  roundRect(g, x, y, cw, ch, Math.round(u * 0.4));
+  g.fill();
+  g.strokeStyle = '#2a2836';
+  g.lineWidth = 1;
+  roundRect(g, x, y, cw, ch, Math.round(u * 0.4));
+  g.stroke();
+
+  const cx = x + cw / 2;
+  // Sprite in the top band.
+  const spriteBox = Math.min(cw * 0.42, ch * 0.34);
+  drawSpriteFit(g, SPRITES[r.type], cx, y + ch * 0.24, spriteBox);
+
+  // PAYS badge (top-right, ACCENT — the payout of the slot).
+  g.textBaseline = 'top';
+  g.textAlign = 'right';
+  g.fillStyle = ACCENT;
+  g.font = `bold ${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillText(`PAYS ${r.score}`, x + cw - u * 0.5, y + u * 0.5);
+
+  // Name.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = INK;
+  g.font = `bold ${Math.round(1.15 * u)}px ${FONT}`;
+  g.fillText(r.name, cx, y + ch * 0.5);
+
+  // Blurb (wrapped).
+  g.fillStyle = DIM;
+  g.font = `${Math.round(0.9 * u)}px ${FONT}`;
+  const blurbLines = wrapText(g, r.blurb, cw - u * 1.2);
+  const blurbY = y + ch * 0.62;
+  blurbLines.forEach((ln, k) => g.fillText(ln, cx, blurbY + k * Math.round(1.1 * u)));
+
+  // Stat line: HP · SPD · DMG · WAVE (or mini note). PAYS lives in the badge above.
+  const statY = y + ch - u * 0.9;
+  g.font = `${Math.round(0.85 * u)}px ${FONT}`;
+  const spawn = r.unlock !== undefined ? `WAVE ${r.unlock}+` : 'MINION';
+  drawSegments(g, [
+    { text: `HP ${r.hp}`, color: DIM },
+    { text: '  ·  ', color: '#3a3846' },
+    { text: `SPD ${r.speed}`, color: DIM },
+    { text: '  ·  ', color: '#3a3846' },
+    { text: `DMG ${r.dmg}♥`, color: '#ff6b7a' },
+    { text: '  ·  ', color: '#3a3846' },
+    { text: spawn, color: DIM },
+  ], x + cw / 2, statY);
+}
+
+function drawBossCard(g, boss, x, y, w, h, u) {
+  g.fillStyle = '#1a0f16';
+  roundRect(g, x, y, w, h, Math.round(u * 0.5));
+  g.fill();
+  g.strokeStyle = ACCENT;
+  g.lineWidth = 2;
+  roundRect(g, x, y, w, h, Math.round(u * 0.5));
+  g.stroke();
+
+  // Sprite on the left.
+  const box = Math.min(h * 0.7, w * 0.12);
+  const sprCx = x + u * 1.2 + box / 2;
+  drawSpriteFit(g, SPRITES.boss, sprCx, y + h / 2, box);
+
+  const tx = x + u * 2.4 + box; // text column right of the sprite
+
+  // Title row.
+  g.textBaseline = 'top';
+  g.textAlign = 'left';
+  g.fillStyle = '#e6743e';
+  g.font = `${Math.round(1.6 * u)}px ${TITLE_FONT}`;
+  g.fillText('BOSS', tx, y + u * 0.7);
+  g.fillStyle = DIM;
+  g.font = `${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillText(boss.cadence, tx, y + u * 2.5);
+
+  // Phase blurbs.
+  g.font = `${Math.round(0.95 * u)}px ${FONT}`;
+  g.fillStyle = INK;
+  boss.phases.forEach((p, i) => {
+    g.fillText(p, tx, y + u * (3.9 + i * 1.25));
+  });
+
+  // Drop + HP/DMG line beneath the phases.
+  g.fillStyle = DIM;
+  g.fillText(`${boss.drop}   ·   HP ${boss.hp} · DMG ${boss.dmg}♥`, tx, y + u * (3.9 + boss.phases.length * 1.25 + 0.2));
+
+  // PAYS badge (top-right, ACCENT).
+  g.textAlign = 'right';
+  g.fillStyle = ACCENT;
+  g.font = `bold ${Math.round(1.5 * u)}px ${FONT}`;
+  g.fillText(`PAYS ${boss.score}`, x + w - u * 1.0, y + u * 0.9);
+  g.textAlign = 'left';
+}
+
+function drawPickupsStrip(g, pickups, x, y, w, h, u) {
+  const half = (w - u) / 2;
+  pickups.forEach((p, i) => {
+    const px = x + i * (half + u);
+    g.fillStyle = '#12121c';
+    roundRect(g, px, y, half, h, Math.round(u * 0.4));
+    g.fill();
+    g.strokeStyle = p.kind === 'red' ? 'rgba(224,54,47,0.5)' : 'rgba(95,232,255,0.5)';
+    g.lineWidth = 1;
+    roundRect(g, px, y, half, h, Math.round(u * 0.4));
+    g.stroke();
+
+    const spr = p.kind === 'red' ? SPRITES.gemRed : SPRITES.gem;
+    const box = Math.min(h * 0.6, u * 2.2);
+    drawSpriteFit(g, spr, px + u * 1.4, y + h / 2, box);
+
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    const textX = px + u * 3.0;
+    g.fillStyle = p.kind === 'red' ? '#ff6b7a' : '#5fe8ff';
+    g.font = `bold ${Math.round(1.1 * u)}px ${FONT}`;
+    g.fillText(p.name, textX, y + h * 0.34);
+    g.fillStyle = INK;
+    g.font = `${Math.round(0.92 * u)}px ${FONT}`;
+    g.fillText(p.effect, textX, y + h * 0.66);
+  });
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+}
+
 // -------------------------------------------------------------- GAME OVER -----
 export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], placedIdx = -1) {
   const u = Math.max(12, Math.round(w / 90));
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = '#e6743e';
-  g.font = `bold 36px ${FONT}`;
+  g.font = `32px ${TITLE_FONT}`;
   g.fillText('SHIP DESTROYED', w / 2, h * 0.15);
   g.fillStyle = INK;
   g.font = `20px ${FONT}`;

@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <title>AFTERBURN INFINITE</title>
 <style>
+  /* Bundled OFL display font (assets/fonts/Audiowide-Regular.woff2). If the
+     assets/ dir is missing the load 404s and every consumer falls back to
+     monospace via its font stack — the game stays fully playable. */
+  @font-face {
+    font-family: 'Audiowide';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('assets/fonts/Audiowide-Regular.woff2') format('woff2');
+  }
   html, body { margin: 0; height: 100%; background: #0b0b12; overflow: hidden; cursor: crosshair; }
   canvas { display: block; image-rendering: pixelated; }
 </style>
