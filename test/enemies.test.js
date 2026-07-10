@@ -6,15 +6,15 @@ import { ENEMIES } from '../src/config.js';
 
 const ship = { x: 400, y: 300 };
 
-test('scaleFor grows 4% per wave', () => {
+test('scaleFor grows 6% per wave', () => {
   assert.equal(scaleFor(1), 1);
-  assert.ok(Math.abs(scaleFor(6) - 1.2) < 1e-9);
+  assert.ok(Math.abs(scaleFor(6) - 1.3) < 1e-9);
 });
 
 test('spawnEnemy applies wave scaling to hp and speed', () => {
   const e = spawnEnemy('drifter', 0, 0, 6);
-  assert.equal(e.hp, Math.round(ENEMIES.drifter.hp * 1.2));
-  assert.ok(Math.abs(e.speed - ENEMIES.drifter.speed * 1.2) < 1e-9);
+  assert.equal(e.hp, Math.round(ENEMIES.drifter.hp * 1.3));
+  assert.ok(Math.abs(e.speed - ENEMIES.drifter.speed * 1.3) < 1e-9);
   assert.equal(e.score, ENEMIES.drifter.score);
 });
 
