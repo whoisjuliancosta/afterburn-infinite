@@ -50,19 +50,34 @@ export function creditDash(ship, damage) {
   ship.dash.recharge = Math.max(0, ship.dash.recharge - DASH.damageCredit * damage);
 }
 
+// World-space thrust direction for the current input, RELATIVE TO FACING:
+// W = forward (toward the cursor), S = back, A/D = strafe. Returns a unit
+// vector or null when there is no movement input. Shared by thrust, dash
+// and the thruster plume so they can never disagree.
+export function moveDir(ship, input) {
+  const f = -(input.moveY || 0); // W gives moveY -1 → forward +1
+  const st = input.moveX || 0;   // D gives +1 → strafe right
+  if (!f && !st) return null;
+  const cos = Math.cos(ship.angle), sin = Math.sin(ship.angle);
+  // forward = (cos, sin); right = (-sin, cos) with screen-y pointing down
+  const x = f * cos - st * sin;
+  const y = f * sin + st * cos;
+  const m = Math.hypot(x, y);
+  return { x: x / m, y: y / m };
+}
+
 export function updateShip(ship, input, dt, arena) {
-  // Twin-stick: the nose tracks the cursor instantly; movement is fully
-  // decoupled from aim (WASD thrusts in screen directions).
+  // The nose tracks the cursor instantly; movement keys are relative to the
+  // facing: W = toward cursor, S = away, A/D = strafe.
   if (input.aimX != null) {
     ship.angle = Math.atan2(input.aimY - ship.y, input.aimX - ship.x);
   }
 
-  const mx = input.moveX || 0, my = input.moveY || 0;
-  if (mx || my) {
-    const m = Math.hypot(mx, my);
+  const dir = moveDir(ship, input);
+  if (dir) {
     const a = SHIP.thrust * ship.mods.engine;
-    ship.vx += (mx / m) * a * dt;
-    ship.vy += (my / m) * a * dt;
+    ship.vx += dir.x * a * dt;
+    ship.vy += dir.y * a * dt;
   }
 
   const damp = Math.exp(-SHIP.friction * dt);

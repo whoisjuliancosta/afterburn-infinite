@@ -22,8 +22,8 @@ A browser-based 360° arena space shooter that rewards pilot skill. Enemies swar
 | Input | Action |
 |---|---|
 | Mouse position | Aim: the nose faces the cursor instantly (twin-stick rework, 2026-07-10) |
-| `WASD` / arrows | Thrust in screen directions (diagonals normalized); movement fully decoupled from aim |
-| `Space` | Dash in the movement direction (nose direction when stationary) |
+| `W`/`S`, `A`/`D` (or arrows) | Facing-relative thrust: W toward the cursor, S away, A/D strafe (diagonals normalized) |
+| `Space` | Dash in the facing-relative movement direction (nose when stationary) |
 | Mouse button (hold) | Full-auto fire at base fire rate, slight bullet spread |
 | Mouse button (tap) | Semi-auto: fires instantly per click, perfect accuracy; fast tapping can slightly exceed full-auto rate |
 
