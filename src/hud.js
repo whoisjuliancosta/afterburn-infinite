@@ -269,10 +269,15 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
       g.fillText(`${i + 1}.  ${e.score}  ·  wave ${e.wave}`, w / 2, h * 0.60 + i * Math.round(1.6 * u));
     });
   }
+  drawPicker(g, w, h, paint);
+  // Start prompt sits BELOW the swatch row: the ~3× ship preview above the
+  // swatches occupies the old h*0.72 band and would strike the text through.
+  const swatch = paintRects(w, h)[0];
   g.fillStyle = INK;
   g.font = `16px ${FONT}`;
-  g.fillText('— click to start —', w / 2, h * 0.72);
-  drawPicker(g, w, h, paint);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('— click to start —', w / 2, swatch.y + swatch.h + Math.round(u * 1.8));
   g.textAlign = 'left';
   g.textBaseline = 'top';
 }
@@ -355,11 +360,15 @@ export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], 
     });
   }
 
+  drawPicker(g, w, h, paint);
+  // Prompt below the swatch row — the ship preview above the swatches covers the
+  // old h*0.72 band (same reason as the menu).
+  const swatch = paintRects(w, h)[0];
   g.textAlign = 'center';
+  g.textBaseline = 'middle';
   g.fillStyle = DIM;
   g.font = `16px ${FONT}`;
-  g.fillText('click or press R to fly again', w / 2, h * 0.72);
-  drawPicker(g, w, h, paint);
+  g.fillText('click or press R to fly again', w / 2, swatch.y + swatch.h + Math.round(u * 1.8));
   g.textAlign = 'left';
   g.textBaseline = 'top';
 }
