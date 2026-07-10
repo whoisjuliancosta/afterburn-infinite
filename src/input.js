@@ -9,7 +9,11 @@ export function createInput(canvas) {
     mouseY = e.offsetY;
   });
 
+  let dashPending = false;
+
   window.addEventListener('keydown', e => {
+    // edge-triggered dash: latch only on the first press, key repeat must not re-fire
+    if (e.code === 'Space' && !e.repeat) dashPending = true;
     down.add(e.code);
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   });
@@ -39,9 +43,11 @@ export function createInput(canvas) {
         aimX: mouseX, aimY: mouseY,
         key1: down.has('Digit1'), key2: down.has('Digit2'), key3: down.has('Digit3'),
         keyR: down.has('KeyR'),
+        dashPressed: dashPending,
       };
       taps = 0;
       clicked = false;
+      dashPending = false;
       return snap;
     },
   };

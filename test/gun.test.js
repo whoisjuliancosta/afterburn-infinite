@@ -62,3 +62,14 @@ test('damage and bullet speed mods apply; firing recoils the ship', () => {
   assert.ok(Math.abs(b.range - GUN.bulletRange * 1.4) < 1e-6);
   assert.ok(s.vx < 0); // recoil opposite to nose
 });
+
+test('bullets carry bounces from the ricochet mod', () => {
+  const s = createShip(0, 0);
+  const [b0] = updateGun(s, { rotate: 0, thrust: false, held: false, taps: 1 }, 1 / 60, rngMid);
+  assert.equal(b0.bounces, 0); // default: no ricochet
+
+  const s2 = createShip(0, 0);
+  s2.mods.bounce = 2;
+  const [b2] = updateGun(s2, { rotate: 0, thrust: false, held: false, taps: 1 }, 1 / 60, rngMid);
+  assert.equal(b2.bounces, 2);
+});
