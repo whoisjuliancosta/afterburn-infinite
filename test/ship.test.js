@@ -11,7 +11,10 @@ test('createShip has spec defaults', () => {
   const s = createShip(400, 300);
   assert.equal(s.hp, 3);
   assert.equal(s.maxHp, 3);
-  assert.deepEqual(s.mods, { fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1 });
+  assert.deepEqual(s.mods, {
+    fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
+    critChance: 0, critMult: 0, dashRate: 1, bounce: 0,
+  });
   assert.deepEqual(s.shield, { owned: false, up: false });
 });
 

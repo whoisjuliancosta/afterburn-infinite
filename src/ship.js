@@ -9,7 +9,10 @@ export function createShip(x, y) {
     radius: SHIP.radius,
     hp: SHIP.maxHp, maxHp: SHIP.maxHp,
     iframes: 0, cooldown: 0,
-    mods: { fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1 },
+    mods: {
+      fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
+      critChance: 0, critMult: 0, dashRate: 1, bounce: 0,
+    },
     shield: { owned: false, up: false },
     dash: { charges: DASH.charges, max: DASH.charges, recharge: 0, stacks: 0 },
   };
@@ -125,7 +128,7 @@ function fire(ship, jitter, rng, withSpread) {
     y: ship.y + Math.sin(a) * ship.radius,
     vx: Math.cos(a) * speed,
     vy: Math.sin(a) * speed,
-    damage, pierce: ship.mods.pierce,
+    damage, pierce: ship.mods.pierce, bounces: ship.mods.bounce,
     traveled: 0, range, radius: GUN.bulletRadius, dead: false,
   }));
 }
