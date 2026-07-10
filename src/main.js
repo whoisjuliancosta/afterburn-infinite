@@ -504,7 +504,9 @@ function render() {
   // native (spec C); blink (skip alternate frames) during the last 1.5s. Glow is
   // pre-baked; symmetric so no rotation. One batch, no per-gem ctx state.
   if (gems && gems.list.length) {
-    const gemSize = GLOW.gemBlue.nat * 0.7; // matches the old drawFrame(…, 0.7)
+    // Draw size derived from GEMS.radius (one knob): identical to the old
+    // 0.7×native at the legacy radius 5, shrinks as the config radius drops.
+    const gemSize = GLOW.gemBlue.nat * 0.14 * GEMS.radius;
     for (const gem of gems.list) {
       if (gemBlinking(gem) && Math.sin(clock * 18) < 0) continue;
       drawGlow(gem.kind === 'red' ? GLOW.gemRed : GLOW.gemBlue, gem.x, gem.y, 0, gemSize);

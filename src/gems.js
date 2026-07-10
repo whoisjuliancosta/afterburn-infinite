@@ -25,7 +25,7 @@ export function createGems() {
 }
 
 function makeGem(x, y, vx, vy, value, kind) {
-  return { x, y, vx, vy, value, kind, age: 0, lifetime: GEMS.lifetime, radius: GEMS.radius };
+  return { x, y, vx, vy, value, kind, age: 0, lifetime: GEMS.lifetime, radius: GEMS.radius, locked: false };
 }
 
 // Drop a single gem at (x, y) with a small random scatter velocity that damps
@@ -82,12 +82,14 @@ export function updateGems(g, ship, dt, magnetRadius = GEMS.magnetRadius) {
   const collected = [];
   const kept = [];
   for (const gem of g.list) {
-    gem.age += dt;
-    if (gem.age >= gem.lifetime) continue; // expired: cull, not collected
-
     const dx = ship.x - gem.x;
     const dy = ship.y - gem.y;
     const d = Math.hypot(dx, dy);
+
+    // Entering the magnet field locks the gem forever (sticky): from now on it
+    // never ages/expires and closes on the ship with a guaranteed floor speed —
+    // "every gem that enters the circle you eat", even a boosting fleeing ship.
+    if (d < magnetRadius && d > 1e-6) gem.locked = true;
 
     // Collect on circle overlap (gem radius vs ship radius).
     if (d < ship.radius + gem.radius) {
@@ -95,23 +97,36 @@ export function updateGems(g, ship, dt, magnetRadius = GEMS.magnetRadius) {
       continue;
     }
 
-    if (d < magnetRadius && d > 1e-6) {
-      // Magnet: accelerate toward the ship. Overrides scatter damping.
-      gem.vx += (dx / d) * GEMS.magnetAccel * dt;
-      gem.vy += (dy / d) * GEMS.magnetAccel * dt;
+    if (gem.locked) {
+      // Locked: age is frozen (never blinks out / expires). Steer velocity
+      // straight at the ship. The magnetAccel ramp shapes the acceleration feel,
+      // but we then enforce a floor of hypot(ship.vx, ship.vy) + lockClosingSpeed
+      // so the closing speed always beats the ship's own speed — distance to the
+      // ship strictly decreases. Capped at max(maxSpeed, floor) so an ordinary
+      // (slow) lock still respects the normal speed cap.
+      if (d > 1e-6) {
+        gem.vx += (dx / d) * GEMS.magnetAccel * dt;
+        gem.vy += (dy / d) * GEMS.magnetAccel * dt;
+        const floor = Math.hypot(ship.vx || 0, ship.vy || 0) + GEMS.lockClosingSpeed;
+        const ramp = Math.hypot(gem.vx, gem.vy);
+        const speed = Math.min(Math.max(ramp, floor), Math.max(GEMS.maxSpeed, floor));
+        gem.vx = (dx / d) * speed;
+        gem.vy = (dy / d) * speed;
+      }
     } else {
-      // Free flight: scatter velocity damps quickly.
+      // Free flight: age and cull on expiry, scatter velocity damps quickly.
+      gem.age += dt;
+      if (gem.age >= gem.lifetime) continue; // expired: cull, not collected
       const damp = Math.exp(-SCATTER_DAMP * dt);
       gem.vx *= damp;
       gem.vy *= damp;
-    }
-
-    // Cap speed.
-    const sp = Math.hypot(gem.vx, gem.vy);
-    if (sp > GEMS.maxSpeed) {
-      const k = GEMS.maxSpeed / sp;
-      gem.vx *= k;
-      gem.vy *= k;
+      // Cap speed.
+      const sp = Math.hypot(gem.vx, gem.vy);
+      if (sp > GEMS.maxSpeed) {
+        const k = GEMS.maxSpeed / sp;
+        gem.vx *= k;
+        gem.vy *= k;
+      }
     }
 
     gem.x += gem.vx * dt;

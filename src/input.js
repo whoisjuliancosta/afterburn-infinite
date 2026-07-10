@@ -43,6 +43,8 @@ export function createInput(canvas) {
       const snap = {
         thrust: down.has('KeyW') || down.has('ArrowUp'),
         reverse: down.has('KeyS') || down.has('ArrowDown'),
+        strafeLeft: down.has('KeyA') || down.has('ArrowLeft'),   // lateral strafe, mirrors thrust/reverse
+        strafeRight: down.has('KeyD') || down.has('ArrowRight'),
         boosting: down.has('ShiftLeft') || down.has('ShiftRight'), // continuous while Shift is held
         held, taps, clicked, clickX, clickY,
         aimX: mouseX, aimY: mouseY,
