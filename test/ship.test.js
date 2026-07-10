@@ -13,10 +13,10 @@ test('createShip has spec defaults', () => {
   assert.equal(s.maxHp, 3);
   assert.deepEqual(s.mods, {
     fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
-    critChance: 0, critMult: 0, dashRate: 1, bounce: 0,
+    critChance: 0, critMult: 0, magnet: 1, bounce: 0,
   });
   assert.deepEqual(s.shield, { owned: false, up: false });
-  assert.deepEqual(s.boost, { meter: 1, units: BOOST.baseUnits });
+  assert.deepEqual(s.boost, { meter: 1, units: BOOST.baseUnits, stacks: 0 });
 });
 
 test('W thrusts toward the facing (forward), not screen-up', () => {

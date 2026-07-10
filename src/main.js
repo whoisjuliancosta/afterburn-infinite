@@ -579,7 +579,7 @@ function seedDevScreen(which) {
     powerLevel = 3;
     applyUpgrade(ship, 'rapid');
     applyUpgrade(ship, 'deadeye');
-    applyUpgrade(ship, 'extradash');
+    applyUpgrade(ship, 'boosttank');
     offers = rollOffers(ship, rng);
     floaters.list = []; // clean overlay for the dev screenshot
     mode = 'upgrade';

@@ -2,6 +2,10 @@ export const BOOST = { drainPerSec: 0.40, thrustMult: 2.4, speedMult: 1.9, baseU
 
 export const CRIT = { chance: 0.10, mult: 2 };
 
+// Upgrade stat caps (spec E). applyUpgrade clamps each mod here; rollOffers hides
+// an upgrade once its target mod is at cap.
+export const CAPS = { fireRate: 3, engine: 2, bulletSpeed: 2.5, pierce: 5, spread: 3, bounce: 3 };
+
 export const SHIP = {
   radius: 18,
   thrust: 680,       // px/s^2 (twin-stick: terminal speed thrust/friction exceeds the cap)

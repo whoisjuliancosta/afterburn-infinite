@@ -4,13 +4,20 @@ import assert from 'node:assert/strict';
 import { UPGRADES, rollOffers, applyUpgrade } from '../src/upgrades.js';
 import { createShip } from '../src/ship.js';
 import { makeRng } from '../src/utils.js';
+import { CAPS, BOOST } from '../src/config.js';
 
-test('pool has the 15 spec upgrades', () => {
+test('pool has the 15 spec upgrades (extradash/recovery reworked away)', () => {
   const ids = UPGRADES.map(u => u.id).sort();
   assert.deepEqual(ids, [
-    'aegis', 'deadeye', 'engine', 'executioner', 'extradash', 'heavy', 'hull',
-    'overclock', 'pierce', 'rapid', 'recovery', 'ricochet', 'secondwind', 'spread', 'velocity',
+    'aegis', 'attractor', 'boosttank', 'deadeye', 'engine', 'executioner', 'heavy',
+    'hull', 'overclock', 'pierce', 'rapid', 'ricochet', 'secondwind', 'spread', 'velocity',
   ]);
+});
+
+test('legacy ids extradash/recovery are gone from the pool', () => {
+  const ids = UPGRADES.map(u => u.id);
+  assert.ok(!ids.includes('extradash'));
+  assert.ok(!ids.includes('recovery'));
 });
 
 test('upgrades stack multiplicatively/additively per spec', () => {
@@ -57,7 +64,7 @@ test('aegis never re-offered once owned', () => {
   }
 });
 
-// --- new v2 upgrades ---
+// --- crit upgrades ---
 
 test('deadeye adds crit chance additively', () => {
   const s = createShip(0, 0);
@@ -73,26 +80,6 @@ test('executioner adds crit multiplier additively', () => {
   assert.ok(Math.abs(s.mods.critMult - 0.5) < 1e-9);
   applyUpgrade(s, 'executioner');
   assert.ok(Math.abs(s.mods.critMult - 1.0) < 1e-9);
-});
-
-test('extradash raises dash max, grants a charge, and counts a stack', () => {
-  const s = createShip(0, 0); // charges = max = 2, stacks 0
-  applyUpgrade(s, 'extradash');
-  assert.equal(s.dash.max, 3);
-  assert.equal(s.dash.charges, 3);
-  assert.equal(s.dash.stacks, 1);
-  applyUpgrade(s, 'extradash');
-  assert.equal(s.dash.max, 4);
-  assert.equal(s.dash.charges, 4);
-  assert.equal(s.dash.stacks, 2);
-});
-
-test('recovery speeds dash recharge multiplicatively', () => {
-  const s = createShip(0, 0);
-  applyUpgrade(s, 'recovery');
-  assert.ok(Math.abs(s.mods.dashRate - 1.25) < 1e-9);
-  applyUpgrade(s, 'recovery');
-  assert.ok(Math.abs(s.mods.dashRate - 1.5625) < 1e-9); // 1.25^2
 });
 
 test('ricochet adds a bounce per stack', () => {
@@ -120,22 +107,135 @@ test('secondwind heals 2 capped at maxHp', () => {
   assert.equal(s.hp, 6); // capped, not 7
 });
 
-test('extradash excluded once at 2 stacks (re-rolls like aegis)', () => {
+// --- reworked pair: Boost Tank + Attractor ---
+
+test('boosttank adds a boost unit and counts a stack', () => {
+  const s = createShip(0, 0); // units = baseUnits, stacks 0
+  applyUpgrade(s, 'boosttank');
+  assert.equal(s.boost.units, BOOST.baseUnits + 1);
+  assert.equal(s.boost.stacks, 1);
+  applyUpgrade(s, 'boosttank');
+  assert.equal(s.boost.units, BOOST.baseUnits + 2);
+  assert.equal(s.boost.stacks, 2);
+});
+
+test('boosttank units never exceed BOOST.maxUnits', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'extradash');
-  applyUpgrade(s, 'extradash'); // stacks now 2
-  assert.equal(s.dash.stacks, 2);
+  for (let i = 0; i < 8; i++) applyUpgrade(s, 'boosttank');
+  assert.equal(s.boost.units, BOOST.maxUnits);
+});
+
+test('boosttank excluded once at 2 stacks (re-rolls like aegis)', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'boosttank');
+  applyUpgrade(s, 'boosttank'); // stacks now 2
+  assert.equal(s.boost.stacks, 2);
   for (let seed = 0; seed < 50; seed++) {
-    assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'extradash'));
+    assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'boosttank'));
   }
 });
 
-test('extradash still offerable below 2 stacks', () => {
+test('boosttank still offerable below 2 stacks', () => {
   const s = createShip(0, 0);
-  applyUpgrade(s, 'extradash'); // stacks 1
+  applyUpgrade(s, 'boosttank'); // stacks 1
   let seen = false;
   for (let seed = 0; seed < 50 && !seen; seed++) {
-    if (rollOffers(s, makeRng(seed)).some(o => o.id === 'extradash')) seen = true;
+    if (rollOffers(s, makeRng(seed)).some(o => o.id === 'boosttank')) seen = true;
   }
   assert.ok(seen);
+});
+
+test('attractor multiplies gem magnet radius by 1.45 per stack', () => {
+  const s = createShip(0, 0);
+  assert.equal(s.mods.magnet, 1);
+  applyUpgrade(s, 'attractor');
+  assert.ok(Math.abs(s.mods.magnet - 1.45) < 1e-9);
+  applyUpgrade(s, 'attractor');
+  assert.ok(Math.abs(s.mods.magnet - 1.45 * 1.45) < 1e-9);
+});
+
+test('attractor excluded once at 2 stacks (magnet at 1.45^2)', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'attractor');
+  applyUpgrade(s, 'attractor');
+  for (let seed = 0; seed < 50; seed++) {
+    assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'attractor'));
+  }
+});
+
+test('attractor still offerable below 2 stacks', () => {
+  const s = createShip(0, 0);
+  applyUpgrade(s, 'attractor'); // 1 stack
+  let seen = false;
+  for (let seed = 0; seed < 50 && !seen; seed++) {
+    if (rollOffers(s, makeRng(seed)).some(o => o.id === 'attractor')) seen = true;
+  }
+  assert.ok(seen);
+});
+
+// --- spec E: stat caps ---
+
+test('every mod holds at its cap under repeated application', () => {
+  const s = createShip(0, 0);
+  for (let i = 0; i < 40; i++) {
+    applyUpgrade(s, 'rapid');
+    applyUpgrade(s, 'engine');
+    applyUpgrade(s, 'velocity');
+    applyUpgrade(s, 'pierce');
+    applyUpgrade(s, 'spread');
+    applyUpgrade(s, 'ricochet');
+    applyUpgrade(s, 'overclock');
+  }
+  assert.equal(s.mods.fireRate, CAPS.fireRate);
+  assert.equal(s.mods.engine, CAPS.engine);
+  assert.equal(s.mods.bulletSpeed, CAPS.bulletSpeed);
+  assert.equal(s.mods.pierce, CAPS.pierce);
+  assert.equal(s.mods.spread, CAPS.spread);
+  assert.equal(s.mods.bounce, CAPS.bounce);
+});
+
+test('each capped upgrade disappears from offers once its stat is maxed', () => {
+  const cases = [
+    ['rapid', 'fireRate'],
+    ['engine', 'engine'],
+    ['velocity', 'bulletSpeed'],
+    ['pierce', 'pierce'],
+    ['spread', 'spread'],
+    ['ricochet', 'bounce'],
+  ];
+  for (const [id] of cases) {
+    const s = createShip(0, 0);
+    for (let i = 0; i < 40; i++) applyUpgrade(s, id);
+    for (let seed = 0; seed < 40; seed++) {
+      assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== id),
+        `${id} should be excluded at cap (seed ${seed})`);
+    }
+  }
+});
+
+test('overclock only excluded when BOTH fireRate and bulletSpeed are capped', () => {
+  // fireRate capped alone (via rapid) — overclock still offerable since bulletSpeed can grow.
+  const s = createShip(0, 0);
+  for (let i = 0; i < 40; i++) applyUpgrade(s, 'rapid');
+  assert.equal(s.mods.fireRate, CAPS.fireRate);
+  assert.ok(s.mods.bulletSpeed < CAPS.bulletSpeed);
+  let seen = false;
+  for (let seed = 0; seed < 60 && !seen; seed++) {
+    if (rollOffers(s, makeRng(seed)).some(o => o.id === 'overclock')) seen = true;
+  }
+  assert.ok(seen, 'overclock offerable while bulletSpeed below cap');
+
+  // Cap bulletSpeed too — now overclock vanishes.
+  for (let i = 0; i < 40; i++) applyUpgrade(s, 'velocity');
+  assert.equal(s.mods.bulletSpeed, CAPS.bulletSpeed);
+  for (let seed = 0; seed < 40; seed++) {
+    assert.ok(rollOffers(s, makeRng(seed)).every(o => o.id !== 'overclock'));
+  }
+});
+
+test('rapid can never push fireRate past cap via applyUpgrade clamp', () => {
+  const s = createShip(0, 0);
+  s.mods.fireRate = CAPS.fireRate - 0.01;
+  applyUpgrade(s, 'rapid'); // 1.25x would overshoot
+  assert.equal(s.mods.fireRate, CAPS.fireRate);
 });

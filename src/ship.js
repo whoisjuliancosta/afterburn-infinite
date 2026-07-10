@@ -11,10 +11,11 @@ export function createShip(x, y) {
     iframes: 0, cooldown: 0,
     boosting: false,
     // Runs start with a full first unit; capacity grows with Boost Tank upgrades.
-    boost: { meter: 1, units: BOOST.baseUnits },
+    // stacks counts Boost Tank picks (offer-excluded at 2).
+    boost: { meter: 1, units: BOOST.baseUnits, stacks: 0 },
     mods: {
       fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
-      critChance: 0, critMult: 0, dashRate: 1, bounce: 0,
+      critChance: 0, critMult: 0, magnet: 1, bounce: 0,
     },
     shield: { owned: false, up: false },
     // Vestigial dash data — read by upgrades (T4) and the HUD (T6) until they

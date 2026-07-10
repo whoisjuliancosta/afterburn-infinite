@@ -9,7 +9,7 @@ const idle = { held: false, taps: 0, thrust: false, boosting: false };
 
 test('createShip seeds a full first boost unit at base capacity', () => {
   const s = createShip(400, 300);
-  assert.deepEqual(s.boost, { meter: 1, units: BOOST.baseUnits });
+  assert.deepEqual(s.boost, { meter: 1, units: BOOST.baseUnits, stacks: 0 });
 });
 
 test('holding boost drains the meter linearly over time', () => {
