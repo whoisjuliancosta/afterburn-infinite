@@ -56,6 +56,11 @@ const input = createInput(canvas);
 const rng = makeRng(Date.now());
 
 let mode = 'loading'; // 'loading' | 'menu' | 'playing' | 'paused' | 'upgrade' | 'gameover'
+// Input lockout after a screen transition, so click-spam from combat can't
+// select an upgrade (or restart a run) the instant the screen appears.
+let uiLockout = 0;
+const UPGRADE_LOCKOUT = 0.5;
+const GAMEOVER_LOCKOUT = 0.6;
 let best = loadBest();
 let board = loadBoard();  // local leaderboard, top 5
 let placedIdx = -1;       // where the just-finished run placed on the board (-1 = didn't)
@@ -156,6 +161,7 @@ function damagePlayer() {
     board = recordRun(board, entry);
     saveBoard(board);
     placedIdx = placed(board, entry);
+    uiLockout = GAMEOVER_LOCKOUT;
     mode = 'gameover';
   }
 }
@@ -292,11 +298,13 @@ function tickPlaying(snap, dt) {
     gems.list = []; // now wipe — every gem has been collected above
     floaters.list = []; // wipe floaters so the upgrade overlay is clean
     offers = rollOffers(ship, rng);
+    uiLockout = UPGRADE_LOCKOUT;
     mode = 'upgrade';
   }
 }
 
-function tickUpgrade(snap) {
+function tickUpgrade(snap, dt) {
+  if (uiLockout > 0) { uiLockout = Math.max(0, uiLockout - dt); return; }
   let choice = -1;
   if (snap.key1) choice = 0;
   if (snap.key2) choice = 1;
@@ -529,8 +537,16 @@ function render() {
   const boss = enemies.find(e => e.type === 'boss');
   if (boss) drawBossBar(g, arena.w, boss); // only while a boss is alive
   if (mode === 'paused') drawPause(g, arena.w, arena.h);
-  if (mode === 'upgrade') drawOffers(g, arena.w, arena.h, offers, clock);
-  if (mode === 'gameover') drawGameOver(g, arena.w, arena.h, run, best, paint, board, placedIdx);
+  if (mode === 'upgrade' || mode === 'gameover') {
+    // Fade the screen in over the input lockout so the guard reads as a
+    // transition, not as unresponsiveness.
+    const lockTotal = mode === 'upgrade' ? UPGRADE_LOCKOUT : GAMEOVER_LOCKOUT;
+    g.save();
+    g.globalAlpha = uiLockout > 0 ? 0.35 + 0.65 * (1 - uiLockout / lockTotal) : 1;
+    if (mode === 'upgrade') drawOffers(g, arena.w, arena.h, offers, clock);
+    else drawGameOver(g, arena.w, arena.h, run, best, paint, board, placedIdx);
+    g.restore();
+  }
 }
 
 function renderFloaters() {
@@ -618,9 +634,10 @@ function frame(t) {
   else if (mode === 'paused') {
     if (snap.pausePressed) mode = 'playing'; // resume; runTime excludes paused frames
   }
-  else if (mode === 'upgrade') tickUpgrade(snap);
+  else if (mode === 'upgrade') tickUpgrade(snap, dt);
   else if (mode === 'gameover') {
-    if (snap.clicked) { if (!handlePaintClick(snap)) startRun(); }
+    if (uiLockout > 0) uiLockout = Math.max(0, uiLockout - dt);
+    else if (snap.clicked) { if (!handlePaintClick(snap)) startRun(); }
     else if (snap.keyR) startRun();
   }
 
