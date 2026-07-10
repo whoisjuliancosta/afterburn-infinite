@@ -36,6 +36,7 @@ function noise(dur, vol = 0.2) {
 }
 
 export function sfxShot()      { blip(880, 0.07, 'square', 0.05, 220); }
+export function sfxDash()       { blip(300, 0.16, 'square', 0.11, 760); } // short rising blip
 export function sfxExplosion() { noise(0.25, 0.25); blip(140, 0.2, 'sawtooth', 0.1, 40); }
 export function sfxHit()       { noise(0.35, 0.3); blip(90, 0.35, 'sawtooth', 0.18, 30); }
 export function sfxChime()     { blip(523, 0.12, 'triangle', 0.15); setTimeout(() => blip(784, 0.2, 'triangle', 0.15), 90); }
