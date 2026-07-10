@@ -39,11 +39,14 @@ export const ENEMIES = {
 };
 
 export const WAVE = {
-  baseBudget: 3,
-  budgetPerWave: 2,      // budget = 3 + 2*(wave-1)
-  scalePerWave: 0.06,    // +6% enemy hp/speed per wave
-  spawnInterval: 1.1,    // s between trickled spawns
-  telegraphTime: 1.0,    // s of spawn warning marker
+  baseBudget: 4,
+  budgetPerWave: 2.5,        // budget = round(4 + 2.5*(wave-1) + 1.5*power)
+  powerBudget: 1.5,          // extra budget per player upgrade taken this run
+  scalePerWave: 0.06,        // +6% enemy hp/speed per wave
+  spawnInterval: 1.1,        // s between trickled spawns at wave 1 (base)
+  spawnIntervalFloor: 0.35,  // fastest trickle
+  spawnIntervalStep: 0.05,   // spacing shaved per wave past 1
+  telegraphTime: 1.0,        // s of spawn warning marker
 };
 
 export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5), capped

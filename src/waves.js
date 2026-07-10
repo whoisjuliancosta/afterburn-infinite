@@ -1,17 +1,30 @@
 // src/waves.js
 import { ENEMIES, WAVE } from './config.js';
 
-const BUYABLE = ['drifter', 'darter', 'splitter'];
+// Order matters only for filtering; unlock gating decides what is buyable per wave.
+const BUYABLE = ['drifter', 'darter', 'spitter', 'splitter', 'orbiter', 'weaver'];
 
-export function waveBudget(wave) {
-  return WAVE.baseBudget + WAVE.budgetPerWave * (wave - 1);
+export function waveBudget(wave, power = 0) {
+  return Math.round(
+    WAVE.baseBudget +
+    WAVE.budgetPerWave * (wave - 1) +
+    WAVE.powerBudget * power
+  );
 }
 
-export function buildWave(wave, rng) {
-  let budget = waveBudget(wave);
+export function spawnIntervalFor(wave) {
+  return Math.max(
+    WAVE.spawnIntervalFloor,
+    WAVE.spawnInterval - WAVE.spawnIntervalStep * (wave - 1)
+  );
+}
+
+export function buildWave(wave, rng, power = 0) {
+  let budget = waveBudget(wave, power);
+  const unlocked = BUYABLE.filter(t => ENEMIES[t].unlock <= wave);
   const types = [];
   while (budget > 0) {
-    const affordable = BUYABLE.filter(t => ENEMIES[t].cost <= budget);
+    const affordable = unlocked.filter(t => ENEMIES[t].cost <= budget);
     const type = affordable[Math.floor(rng() * affordable.length)];
     types.push(type);
     budget -= ENEMIES[type].cost;
@@ -19,11 +32,12 @@ export function buildWave(wave, rng) {
   return types;
 }
 
-export function scheduleWave(types, rng, arena) {
+export function scheduleWave(types, rng, arena, wave = 1) {
+  const interval = spawnIntervalFor(wave);
   return types
     .map((type, i) => {
       const { x, y } = edgePoint(Math.floor(rng() * 4), rng(), arena);
-      return { at: i * WAVE.spawnInterval + rng() * 0.4, type, x, y };
+      return { at: i * interval + rng() * 0.4, type, x, y };
     })
     .sort((a, b) => a.at - b.at);
 }
