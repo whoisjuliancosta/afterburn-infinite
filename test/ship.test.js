@@ -5,7 +5,7 @@ import { createShip, updateShip } from '../src/ship.js';
 import { SHIP } from '../src/config.js';
 
 const arena = { w: 800, h: 600 };
-const idle = { rotate: 0, thrust: false, held: false, taps: 0 };
+const idle = { moveX: 0, moveY: 0, held: false, taps: 0 };
 
 test('createShip has spec defaults', () => {
   const s = createShip(400, 300);
@@ -18,19 +18,20 @@ test('createShip has spec defaults', () => {
   assert.deepEqual(s.shield, { owned: false, up: false });
 });
 
-test('rotation input turns the ship', () => {
+test('movement input thrusts in screen directions, independent of aim', () => {
   const s = createShip(400, 300);
-  const a0 = s.angle;
-  updateShip(s, { ...idle, rotate: 1 }, 0.5, arena);
-  assert.ok(Math.abs(s.angle - a0 - SHIP.turnRate * 0.5) < 1e-9);
+  s.angle = 0; // aiming right...
+  updateShip(s, { ...idle, moveX: 0, moveY: -1 }, 0.1, arena); // ...moving up
+  assert.ok(s.vy < 0);
+  assert.ok(Math.abs(s.vx) < 1e-9);
 });
 
-test('thrust accelerates in facing direction', () => {
-  const s = createShip(400, 300);
-  s.angle = 0; // facing +x
-  updateShip(s, { ...idle, thrust: true }, 0.1, arena);
-  assert.ok(s.vx > 0);
-  assert.ok(Math.abs(s.vy) < 1e-9);
+test('diagonal movement is normalized (no speed advantage)', () => {
+  const a = createShip(400, 300);
+  const b = createShip(400, 300);
+  updateShip(a, { ...idle, moveX: 1, moveY: 0 }, 0.1, arena);
+  updateShip(b, { ...idle, moveX: 1, moveY: 1 }, 0.1, arena);
+  assert.ok(Math.abs(Math.hypot(a.vx, a.vy) - Math.hypot(b.vx, b.vy)) < 1e-9);
 });
 
 test('friction damps velocity when coasting', () => {
@@ -64,7 +65,7 @@ test('iframes and cooldown tick down', () => {
   assert.equal(s.cooldown, 0.75);
 });
 
-// --- mouse aim: nose chases cursor at turn rate ---
+// --- twin-stick aim: nose snaps to the cursor ---
 
 test('angleDiff gives signed shortest rotation', async () => {
   const { angleDiff } = await import('../src/utils.js');
@@ -74,33 +75,11 @@ test('angleDiff gives signed shortest rotation', async () => {
   assert.ok(Math.abs(angleDiff(3, -3) - (2 * Math.PI - 6)) < 1e-9);
 });
 
-test('nose turns toward aim point, clamped by turn rate', () => {
+test('nose snaps to the aim point instantly', () => {
   const s = createShip(400, 300);
   s.angle = 0;
-  // aim straight down (+y): target angle = PI/2, farther than one step
-  updateShip(s, { ...idle, aimX: 400, aimY: 700 }, 0.1, arena);
-  assert.ok(Math.abs(s.angle - SHIP.turnRate * 0.1) < 1e-9);
-});
-
-test('nose snaps to aim when within one step', () => {
-  const s = createShip(400, 300);
-  s.angle = 0.01;
-  updateShip(s, { ...idle, aimX: 800, aimY: 300 }, 0.1, arena); // target angle 0
-  assert.ok(Math.abs(s.angle) < 1e-9);
-});
-
-test('aim takes the shortest path across the angle wrap', () => {
-  const s = createShip(400, 300);
-  s.angle = 3; // near +pi
-  updateShip(s, { ...idle, aimX: 400 + Math.cos(-3) * 100, aimY: 300 + Math.sin(-3) * 100 }, 0.01, arena);
-  assert.ok(s.angle > 3); // turns positive (through pi), not the long way back
-});
-
-test('keyboard rotate overrides mouse aim', () => {
-  const s = createShip(400, 300);
-  s.angle = 0;
-  updateShip(s, { ...idle, rotate: -1, aimX: 400, aimY: 700 }, 0.1, arena);
-  assert.ok(Math.abs(s.angle + SHIP.turnRate * 0.1) < 1e-9); // followed keys, not cursor
+  updateShip(s, { ...idle, aimX: 400, aimY: 700 }, 0.016, arena); // cursor straight down
+  assert.ok(Math.abs(s.angle - Math.PI / 2) < 1e-9);
 });
 
 test('no aim fields means angle is untouched (backward compatible)', () => {

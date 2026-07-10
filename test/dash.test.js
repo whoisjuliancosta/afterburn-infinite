@@ -5,7 +5,7 @@ import { createShip, updateShip, tryDash, creditDash } from '../src/ship.js';
 import { DASH, SHIP } from '../src/config.js';
 
 const arena = { w: 800, h: 600 };
-const idle = { rotate: 0, thrust: false, held: false, taps: 0 };
+const idle = { moveX: 0, moveY: 0, held: false, taps: 0 };
 
 test('createShip seeds dash at full charges', () => {
   const s = createShip(400, 300);
@@ -145,4 +145,13 @@ test('no recharge activity while at full charges', () => {
   updateShip(s, idle, 10, arena);
   assert.equal(s.dash.charges, DASH.charges);
   assert.equal(s.dash.recharge, 0);
+});
+
+test('dash follows movement input over the nose', async () => {
+  const { createShip, tryDash } = await import('../src/ship.js');
+  const s = createShip(400, 300);
+  s.angle = 0; // aiming right
+  tryDash(s, 0, -1); // moving up
+  const assert = (await import('node:assert/strict')).default;
+  assert.ok(s.vy < 0 && Math.abs(s.vx) < 1e-9);
 });

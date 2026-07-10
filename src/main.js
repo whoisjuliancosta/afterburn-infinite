@@ -68,7 +68,8 @@ let clock = 0; // global animation clock (sprite frames, previews, floaters)
 let run, ship, bullets, enemies, enemyShots, telegraphs, pending, waveT, fx, floaters, gems, offers;
 let explosions = []; // one-shot 9-frame explosion FX entities at kill points
 let powerLevel;         // upgrades taken this run (feeds wave budget)
-let thrusting = false;  // last-frame thrust state, for the engine flame
+let thrusting = false;  // last-frame movement state, for the engine flame
+let moveAngle = 0;      // direction of travel input — the plume points opposite this
 let shipTrail = [];     // recent {x, y, angle} for the dash afterimage
 let dashTrailT = 0;     // afterimage lifetime countdown
 
@@ -186,7 +187,7 @@ function tickPlaying(snap, dt) {
   if (fx.pause > 0) return; // hit-pause freezes the world, not the fx
 
   // Dash: edge-triggered impulse + iframes, with burst, SFX and afterimage.
-  if (snap.dashPressed && tryDash(ship)) {
+  if (snap.dashPressed && tryDash(ship, snap.moveX, snap.moveY)) {
     run.stats.dashes += 1;
     sfxDash();
     burst(fx, ship.x - Math.cos(ship.angle) * ship.radius,
@@ -195,7 +196,8 @@ function tickPlaying(snap, dt) {
   }
 
   updateShip(ship, snap, dt, arena);
-  thrusting = !!snap.thrust;
+  thrusting = !!(snap.moveX || snap.moveY);
+  if (thrusting) moveAngle = Math.atan2(snap.moveY, snap.moveX);
 
   const shots = updateGun(ship, snap, dt, rng);
   if (shots.length > 0) {
@@ -435,10 +437,10 @@ function render() {
     if (ASSETS.thrust.length) {
       const fr = ASSETS.thrust[Math.floor(clock * 14) % ASSETS.thrust.length];
       const off = ship.radius * 1.2;
-      if (fr) drawScaled(fr, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle, ship.radius * 2.2);
+      if (fr) drawScaled(fr, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle, ship.radius * 2.2);
     } else if (SPRITES.flame) {
       const off = ship.radius * 0.8;
-      drawFrame(SPRITES.flame, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle);
+      drawFrame(SPRITES.flame, ship.x - Math.cos(moveAngle) * off, ship.y - Math.sin(moveAngle) * off, moveAngle);
     }
   }
   g.restore();

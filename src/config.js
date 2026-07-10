@@ -4,10 +4,9 @@ export const CRIT = { chance: 0.10, mult: 2 };
 
 export const SHIP = {
   radius: 18,
-  turnRate: 3.6,     // rad/s
-  thrust: 320,       // px/s^2
+  thrust: 680,       // px/s^2 (twin-stick: terminal speed thrust/friction exceeds the cap)
   maxSpeed: 260,     // px/s
-  friction: 1.2,     // exponential damping coefficient per second
+  friction: 2.4,     // exponential damping per second — light drift, responsive stops
   recoil: 18,        // px/s pushback per shot
   maxHp: 3,
   iframeTime: 1.2,   // s of invulnerability after a hit

@@ -227,7 +227,7 @@ function drawPicker(g, w, h, paint) {
   g.textBaseline = 'bottom';
   g.font = `${u}px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('SHIP COLOR', w / 2, rects[0].y - Math.round(u * 0.6));
+  g.fillText('CHOOSE YOUR SHIP', w / 2, rects[0].y - Math.round(u * 0.6));
   for (const r of rects) {
     g.fillStyle = r.hue;
     g.fillRect(r.x, r.y, r.w, r.h);
@@ -255,7 +255,7 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
   g.fillText('UNTITLED SPACE SHOOTER', w / 2, h * 0.28);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('aim with mouse · W or ↑ thrust · SPACE dash · A/D override turn', w / 2, h * 0.42);
+  g.fillText('WASD or arrows move · aim with mouse · SPACE dash', w / 2, h * 0.42);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
   if (best > 0) {
     g.fillStyle = ACCENT;
