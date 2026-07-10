@@ -8,7 +8,7 @@ Global constraints unchanged (vanilla JS, zero deps, ESM, Node-clean pure logic 
 ## A. Score gems
 
 - Killed enemies drop a gem with probability `GEMS.dropChance` (0.65), worth `Math.max(10, Math.round(enemy.score / 8))` score (multiplier applies on collect), at the enemy's position with a small random scatter velocity that damps quickly.
-- Gems live `GEMS.lifetime` (6s); blink during the last 1.5s; despawn uncollected.
+- Gems live `GEMS.lifetime` (6s); blink during the last 1.5s; expire uncollected mid-wave. On wave clear the transition is immediate (no loot screen), so any remaining field gems are auto-collected (full score/stat/dash payout, one chime) rather than discarded — the boss's 6-gem ring always pays out.
 - **Magnet:** within `GEMS.magnetRadius` (130px) of the ship, gems accelerate toward it (`GEMS.magnetAccel` 900 px/s²; cap 480 px/s). Collect on circle overlap (gem radius 7).
 - Collecting also shaves `GEMS.dashCredit` (0.12s) off the active dash recharge — flying into the fight pays defensively too.
 - Bosses always drop 6 gems in a ring.

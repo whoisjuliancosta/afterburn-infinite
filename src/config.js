@@ -36,6 +36,9 @@ export const ENEMIES = {
               orbitRadius: 240, spiralRate: 12 },
   weaver:   { cost: 3, hp: 2, speed: 95,  radius: 13, score: 225, unlock: 7,
               weaveAmp: 70, weaveFreq: 0.9 },
+  boss:     { cost: 0, hp: 60, speed: 32, radius: 42, score: 2000, unlock: 5,
+              ringEvery: 3.0, ringCount: 10, chargeEvery: 7.0, chargeSpeed: 380,
+              chargeTime: 0.6, spawnEvery: 8.0, shotSpeed: 170, shotRadius: 6 },
 };
 
 export const WAVE = {
@@ -50,3 +53,5 @@ export const WAVE = {
 };
 
 export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5), capped
+
+export const GEMS = { dropChance: 0.65, lifetime: 6, magnetRadius: 130, magnetAccel: 900, maxSpeed: 480, radius: 7, dashCredit: 0.12 };

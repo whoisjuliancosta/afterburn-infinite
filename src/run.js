@@ -2,7 +2,13 @@
 import { SCORE, SHIP } from './config.js';
 
 export function createRun() {
-  return { score: 0, streak: 0, wave: 1, over: false };
+  return {
+    score: 0, streak: 0, wave: 1, over: false,
+    stats: {
+      kills: 0, shotsFired: 0, shotsHit: 0, dashes: 0,
+      gemsCollected: 0, bossKills: 0, runTime: 0,
+    },
+  };
 }
 
 export function multiplier(run) {
@@ -12,6 +18,8 @@ export function multiplier(run) {
 export function addKill(run, enemy) {
   run.score += enemy.score * multiplier(run);
   run.streak += 1;
+  run.stats.kills += 1;
+  if (enemy.type === 'boss') run.stats.bossKills += 1;
 }
 
 export function hitPlayer(run, ship) {

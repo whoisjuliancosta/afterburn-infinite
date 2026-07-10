@@ -41,3 +41,9 @@ export function sfxExplosion() { noise(0.25, 0.25); blip(140, 0.2, 'sawtooth', 0
 export function sfxHit()       { noise(0.35, 0.3); blip(90, 0.35, 'sawtooth', 0.18, 30); }
 export function sfxChime()     { blip(523, 0.12, 'triangle', 0.15); setTimeout(() => blip(784, 0.2, 'triangle', 0.15), 90); }
 export function sfxWave()      { blip(330, 0.1, 'triangle', 0.12); setTimeout(() => blip(440, 0.15, 'triangle', 0.12), 100); }
+export function sfxGem()        { blip(1245, 0.05, 'triangle', 0.045, 1660); } // short high quiet blip
+export function sfxBossDown() { // descending 3-note dirge
+  blip(660, 0.18, 'sawtooth', 0.16, 480);
+  setTimeout(() => blip(440, 0.22, 'sawtooth', 0.16, 300), 150);
+  setTimeout(() => blip(220, 0.4, 'sawtooth', 0.16, 80), 330);
+}

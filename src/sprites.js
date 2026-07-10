@@ -206,6 +206,54 @@ const WEAVER_ROWS = [
 const WEAVER_A = { W: '#4fe0a0', E: '#eaffd0' };
 const WEAVER_B = { W: '#4fe0a0', E: '#2f8a63' };
 
+// ---------------------------------------------------------------- BOSS -------
+// 28px source (scale 4 → ~112px). A crowned warlord: gold crown spikes (K),
+// deep-purple armored hull (B/b) with a magenta rim (R) framing twin glowing
+// cores (C, the animated token) that read as menacing eyes. Its own palette,
+// silhouette clearly unlike the round splitter. Windup flash is applied by the
+// renderer (alpha pulse) reading state === 'windup'.
+const BOSS_ROWS = [
+  '.....K....K..KK..K....K.....',
+  '....KK...KKKKKKKKKK...KK....',
+  '...OKKO.OKKKKKKKKKKO.OKKO...',
+  '...OBBOOOBBBBOOBBBBOOOBBO...',
+  '..OBBBBBBBBBBRRBBBBBBBBBBO..',
+  '.OBBBBBBBBBBBBBBBBBBBBBBBBO.',
+  'OBBBBBBRRRRBBBBBBRRRRBBBBBBO',
+  'OBBBBBRCCCCRBBBBRCCCCRBBBBBO',
+  'OBBBBRCCCCCCCBBCCCCCCCRBBBBO',
+  'OBBBBRCCCCCCCCCCCCCCCCRBBBBO',
+  'OBBBBRCCCCCCCCCCCCCCCCRBBBBO',
+  'OBBBBBRCCCCRBBBBRCCCCRBBBBBO',
+  'OBBBBBBRRRRBBBBBBRRRRBBBBBBO',
+  '.OBBBBBBBBBBBBBBBBBBBBBBBBO.',
+  '..OBBBBBBBBBBRRBBBBBBBBBBO..',
+  '...OBBOOOBBBBOOBBBBOOOBBO...',
+  '....OBBObbbOBBBBObbbOBBO....',
+  '.....OOOObbObbbbObbOOOO.....',
+  '.......OOOOOObbOOOOOO.......',
+  '..........OOOOOOOO..........',
+];
+const BOSS_A = { K: '#ffcf4a', O: '#140a1e', B: '#3a1a5c', b: '#26113d', R: '#8a3ecf', C: '#ff2e6e' };
+const BOSS_B = { K: '#ffe08a', O: '#140a1e', B: '#3a1a5c', b: '#26113d', R: '#b06ee0', C: '#ff8ac0' };
+
+// ----------------------------------------------------------------- GEM -------
+// Small cyan/teal diamond, 2 frames sparkle: center glint S flashes white (A)
+// then blends into the fill (B) for a twinkle; the edge/fill also shimmer.
+const GEM_ROWS = [
+  '....C....',
+  '...CEC...',
+  '..CEEEC..',
+  '.CEEEEEC.',
+  'CEEESEEEC',
+  '.CEEEEEC.',
+  '..CEEEC..',
+  '...CEC...',
+  '....C....',
+];
+const GEM_A = { C: '#1fb8d4', E: '#5fe8ff', S: '#ffffff' };
+const GEM_B = { C: '#26c8e0', E: '#7ff2ff', S: '#7ff2ff' };
+
 // --------------------------------------------------------------- HEARTS ------
 const HEART_ROWS = [
   '.RR.RR.',
@@ -413,6 +461,8 @@ export function initSprites(paint = '#e8e6d8') {
   SPRITES.spitter = makeFrames(SPITTER_ROWS, SPITTER_A, SPITTER_B);
   SPRITES.orbiter = makeFrames(ORBITER_ROWS, ORBITER_A, ORBITER_B);
   SPRITES.weaver = makeFrames(WEAVER_ROWS, WEAVER_A, WEAVER_B);
+  SPRITES.boss = makeFrames(BOSS_ROWS, BOSS_A, BOSS_B);
+  SPRITES.gem = makeFrames(GEM_ROWS, GEM_A, GEM_B);
 
   SPRITES.heart = makeSprite(HEART_ROWS, HEART_PAL);
   SPRITES.heartEmpty = makeSprite(HEART_EMPTY_ROWS, HEART_EMPTY_PAL);
