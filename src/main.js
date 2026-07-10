@@ -11,6 +11,7 @@ import { loadBoard, recordRun, saveBoard, placed } from './board.js';
 import { rollOffers, applyUpgrade } from './upgrades.js';
 import { createFloaters, addFloater, updateFloaters } from './floaters.js';
 import { initSprites, SPRITES } from './sprites.js';
+import { ASSETS, loadAssets, bossSprite } from './assets.js';
 import { createFx, burst, addShake, addPause, updateFx } from './particles.js';
 import { createStarfield, updateStarfield, drawStarfield } from './starfield.js';
 import { initAudio, sfxShot, sfxDash, sfxExplosion, sfxHit, sfxChime, sfxWave, sfxGem, sfxBossDown } from './audio.js';
@@ -31,29 +32,36 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// Ship paint: persisted choice, default white. Guard localStorage (private mode).
-// Whitelist against the 6 spec-G swatches; anything else falls back to white.
-const DEFAULT_PAINT = '#e8e6d8';
-const PAINTS = ['#e8e6d8', '#e0524a', '#5ea8ff', '#63d471', '#ffd75e', '#b07fe8'];
+// Ship paint: persisted choice is now a pack FAMILY key (default metalic). Guard
+// localStorage (private mode). Legacy v3 hex values migrate to their family.
+const DEFAULT_PAINT = 'metalic';
+const FAMILY_KEYS = ['metalic', 'red', 'blue', 'greyblue', 'orange', 'purple'];
+const LEGACY_PAINT = {
+  '#e8e6d8': 'metalic', '#e0524a': 'red', '#5ea8ff': 'blue',
+  '#b07fe8': 'purple', '#ffd75e': 'orange', '#63d471': 'greyblue',
+};
 function loadPaint() {
   try {
     const stored = localStorage.getItem('np-shooter-paint');
-    return PAINTS.includes(stored) ? stored : DEFAULT_PAINT;
+    if (FAMILY_KEYS.includes(stored)) return stored;
+    if (LEGACY_PAINT[stored]) return LEGACY_PAINT[stored];
+    return DEFAULT_PAINT;
   }
   catch { return DEFAULT_PAINT; }
 }
 let paint = loadPaint();
-initSprites(paint);
+initSprites(paint); // code-gen fallback now; rebound to pack art once assets load
 
 const input = createInput(canvas);
 const rng = makeRng(Date.now());
 
-let mode = 'menu'; // 'menu' | 'playing' | 'paused' | 'upgrade' | 'gameover'
+let mode = 'loading'; // 'loading' | 'menu' | 'playing' | 'paused' | 'upgrade' | 'gameover'
 let best = loadBest();
 let board = loadBoard();  // local leaderboard, top 5
 let placedIdx = -1;       // where the just-finished run placed on the board (-1 = didn't)
 let clock = 0; // global animation clock (sprite frames, previews, floaters)
 let run, ship, bullets, enemies, enemyShots, telegraphs, pending, waveT, fx, floaters, gems, offers;
+let explosions = []; // one-shot 9-frame explosion FX entities at kill points
 let powerLevel;         // upgrades taken this run (feeds wave budget)
 let thrusting = false;  // last-frame thrust state, for the engine flame
 let shipTrail = [];     // recent {x, y, angle} for the dash afterimage
@@ -72,6 +80,7 @@ function startRun() {
   floaters = createFloaters();
   gems = createGems();
   offers = [];
+  explosions = [];
   placedIdx = -1;
   powerLevel = 0;
   thrusting = false;
@@ -90,6 +99,14 @@ function startWave(n) {
   addFloater(floaters, arena.w / 2, arena.h * 0.22, `WAVE ${n}`, 'info');
 }
 
+// One-shot explosion FX entity at a death point. ~0.45s over the 9-frame sheet,
+// sized ~2.2× the entity radius (bosses get ~2× that). Falls back silently to
+// nothing when the sheet is missing (the halved particle burst still fires).
+function spawnExplosion(x, y, radius, boss = false) {
+  const diameter = radius * 2.2 * (boss ? 2 : 1) * 2; // 2.2×r radius → ×2 for diameter
+  explosions.push({ x, y, size: diameter, t: 0, life: 0.45 });
+}
+
 function killEnemy(e) {
   e.dead = true;
   addKill(run, e);
@@ -103,13 +120,15 @@ function killEnemy(e) {
     ship.hp = Math.min(ship.maxHp, ship.hp + 1);       // heal 1 heart (capped)
     ship.dash.charges = ship.dash.max;                 // instant full dash recharge
     ship.dash.recharge = 0;                            // recharge idle
-    burst(fx, e.x, e.y, '#ff9e3e', 42, rng, 260, true); // bigger explosion
+    spawnExplosion(e.x, e.y, e.radius, true);
+    burst(fx, e.x, e.y, '#ff9e3e', 21, rng, 260, true); // halved: sprite carries it
     addShake(fx, 16);
     addPause(fx, 0.05);
     sfxBossDown();
   } else {
     if (rng() < GEMS.dropChance) spawnGem(gems, e.x, e.y, gemValue, rng);
-    burst(fx, e.x, e.y, '#ff9e3e', 14, rng, 160, true); // explosion glows
+    spawnExplosion(e.x, e.y, e.radius);
+    burst(fx, e.x, e.y, '#ff9e3e', 7, rng, 160, true); // halved: sprite carries it
     addShake(fx, 5);
     addPause(fx, 0.03);
     sfxExplosion();
@@ -156,6 +175,8 @@ function tickPlaying(snap, dt) {
   run.stats.runTime += dt; // unpaused seconds (paused ticks never reach here)
   updateFloaters(floaters, dt);
   updateFx(fx, dt);
+  for (const ex of explosions) ex.t += dt;
+  explosions = explosions.filter(ex => ex.t < ex.life);
   if (fx.pause > 0) return; // hit-pause freezes the world, not the fx
 
   // Dash: edge-triggered impulse + iframes, with burst, SFX and afterimage.
@@ -235,7 +256,8 @@ function tickPlaying(snap, dt) {
       if (e.type !== 'boss') {
         e.dead = true; // enemy explodes on impact, no score
         enemies.push(...deathSpawns(e));
-        burst(fx, e.x, e.y, '#8a879a', 8, rng);
+        spawnExplosion(e.x, e.y, e.radius);
+        burst(fx, e.x, e.y, '#8a879a', 4, rng); // halved: sprite carries it
       }
       damagePlayer();
       if (mode !== 'playing') break;
@@ -300,7 +322,7 @@ function handlePaintClick(snap) {
   for (const r of paintRects(arena.w, arena.h)) {
     if (snap.clickX >= r.x && snap.clickX <= r.x + r.w &&
         snap.clickY >= r.y && snap.clickY <= r.y + r.h) {
-      paint = r.color;
+      paint = r.family;
       try { localStorage.setItem('np-shooter-paint', paint); } catch { /* ignore */ }
       initSprites(paint);
       return true;
@@ -321,10 +343,37 @@ function drawFrame(spr, x, y, angle = 0) {
   g.restore();
 }
 
+// Draw a sprite (canvas or 2-frame array) centred at x,y, rotated, scaled so its
+// larger dimension = `diameter` (aspect preserved, nearest-neighbor). Used for
+// ships/enemies/projectiles so pack art and code-gen fallback share one sizing
+// rule (spec C: draw diameter ≈ entity radius × 2.5).
+function drawScaled(spr, x, y, angle, diameter) {
+  const img = Array.isArray(spr) ? spr[frameIndex()] : spr;
+  const nat = Math.max(img.width, img.height) || 1;
+  const s = diameter / nat;
+  const w = img.width * s, h = img.height * s;
+  g.save();
+  g.translate(x, y);
+  g.rotate(angle);
+  g.drawImage(img, -w / 2, -h / 2, w, h);
+  g.restore();
+}
+
 function render() {
   g.fillStyle = '#0b0b12';
   g.fillRect(0, 0, canvas.width, canvas.height);
   drawStarfield(g, starfield); // parallax stars behind everything
+
+  if (mode === 'loading') {
+    g.save();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#8a879a';
+    g.font = `bold ${Math.max(16, Math.round(arena.w / 45))}px monospace`;
+    g.fillText('LOADING…', arena.w / 2, arena.h / 2);
+    g.restore();
+    return;
+  }
 
   if (mode === 'menu') { drawMenu(g, arena.w, arena.h, best, paint, board); return; }
 
@@ -338,24 +387,48 @@ function render() {
     g.strokeRect(tg.x - 10, tg.y - 10, 20, 20);
   }
 
-  // --- Glow pass: bullets + enemy shots + flame (shadowBlur), then reset ---
+  // --- Glow pass: bullets + enemy shots + thruster (shadowBlur), then reset ---
   g.save();
   g.shadowBlur = 12;
+  // Player bullets → animated projectile sprite (rotated to travel dir), else square.
   g.shadowColor = '#ffd75e';
-  g.fillStyle = '#ffd75e';
-  for (const b of bullets) g.fillRect(b.x - b.radius / 2, b.y - b.radius / 2, b.radius, b.radius);
-  g.shadowColor = HOSTILE;
-  g.fillStyle = HOSTILE;
-  for (const s of enemyShots) {
-    g.beginPath();
-    g.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-    g.fill();
+  const playerProj = ASSETS.projectiles.player;
+  if (playerProj) {
+    for (const b of bullets) drawScaled(playerProj, b.x, b.y, Math.atan2(b.vy, b.vx), b.radius * 6);
+  } else {
+    g.fillStyle = '#ffd75e';
+    for (const b of bullets) g.fillRect(b.x - b.radius / 2, b.y - b.radius / 2, b.radius, b.radius);
   }
-  // Engine flame behind the ship while thrusting.
-  if (thrusting && SPRITES.flame) {
+  // Hostile shots → pink projectile sprite; boss shots (bigger radius) use the
+  // boss bolt if present. Falls back to the filled circle.
+  g.shadowColor = HOSTILE;
+  const enemyProj = ASSETS.projectiles.enemy;
+  const bossProj = ASSETS.projectiles.boss || enemyProj;
+  if (enemyProj) {
+    for (const s of enemyShots) {
+      const spr = s.radius >= 6 ? bossProj : enemyProj;
+      drawScaled(spr, s.x, s.y, Math.atan2(s.vy, s.vx), s.radius * 5);
+    }
+  } else {
+    g.fillStyle = HOSTILE;
+    for (const s of enemyShots) {
+      g.beginPath();
+      g.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  // Engine thruster behind the ship while thrusting: pack plume (animated) or the
+  // code-gen flame. Both trail rearward when rotated by ship.angle.
+  if (thrusting) {
     g.shadowColor = '#ff9e3e';
-    const off = ship.radius * 0.8;
-    drawFrame(SPRITES.flame, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle);
+    if (ASSETS.thrust.length) {
+      const fr = ASSETS.thrust[Math.floor(clock * 14) % ASSETS.thrust.length];
+      const off = ship.radius * 1.2;
+      drawScaled(fr, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle, ship.radius * 2.2);
+    } else if (SPRITES.flame) {
+      const off = ship.radius * 0.8;
+      drawFrame(SPRITES.flame, ship.x - Math.cos(ship.angle) * off, ship.y - Math.sin(ship.angle) * off, ship.angle);
+    }
   }
   g.restore();
 
@@ -372,34 +445,41 @@ function render() {
   }
 
   for (const e of enemies) {
-    const spr = SPRITES[e.type];
+    // Boss art is a large ship cycled by boss number; other enemies use their
+    // mapped small ship (code-gen fallback via SPRITES[type]).
+    let spr = SPRITES[e.type];
+    if (e.type === 'boss') { const b = bossSprite(e.wave); if (b) spr = b; }
+    // Real ship art flies nose-first: movers face their velocity, spitter faces
+    // the ship, the (non-rotating) boss faces +x like its code-gen predecessor.
     let angle = 0;
-    if (e.type === 'darter' || e.type === 'weaver') angle = Math.atan2(e.vy, e.vx);
-    else if (e.type === 'spitter') angle = Math.atan2(ship.y - e.y, ship.x - e.x);
+    if (e.type === 'spitter') angle = Math.atan2(ship.y - e.y, ship.x - e.x);
+    else if (e.type !== 'boss') angle = Math.atan2(e.vy, e.vx);
+    const diameter = e.radius * 2.5;
     const flash = (e.type === 'darter' && e.state === 'aim' && Math.sin(e.timer * 30) > 0)
                || (e.type === 'boss' && e.state === 'windup' && Math.sin(clock * 30) > 0);
     if (flash) {
       g.save();
       g.globalAlpha = 0.5;
-      drawFrame(spr, e.x, e.y, angle);
+      drawScaled(spr, e.x, e.y, angle, diameter);
       g.restore();
     } else {
-      drawFrame(spr, e.x, e.y, angle);
+      drawScaled(spr, e.x, e.y, angle, diameter);
     }
   }
 
   // Dash afterimage: last 3 poses at falling alpha, only while the dash is fresh.
+  const shipD = ship.radius * 2.5;
   if (dashTrailT > 0) {
     for (let i = 1; i < Math.min(4, shipTrail.length); i++) {
       const p = shipTrail[i];
       g.globalAlpha = (dashTrailT / 0.35) * (0.32 - (i - 1) * 0.09);
-      drawFrame(SPRITES.ship, p.x, p.y, p.angle);
+      drawScaled(SPRITES.ship, p.x, p.y, p.angle, shipD);
     }
     g.globalAlpha = 1;
   }
 
   const blinking = ship.iframes > 0 && Math.sin(ship.iframes * 30) > 0;
-  if (!blinking && mode !== 'gameover') drawFrame(SPRITES.ship, ship.x, ship.y, ship.angle); // destroyed ship isn't drawn under the game-over overlay
+  if (!blinking && mode !== 'gameover') drawScaled(SPRITES.ship, ship.x, ship.y, ship.angle, shipD); // destroyed ship isn't drawn under the game-over overlay
   if (ship.shield.up) {
     g.strokeStyle = '#5ea8ff';
     g.lineWidth = 2;
@@ -428,6 +508,19 @@ function render() {
   }
   g.restore();
   g.globalAlpha = 1;
+
+  // One-shot explosion sheets (additive), stepped across the 9 frames by lifetime.
+  if (explosions.length && ASSETS.explosion.length) {
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    const n = ASSETS.explosion.length;
+    for (const ex of explosions) {
+      const fi = Math.min(n - 1, Math.floor((ex.t / ex.life) * n));
+      const img = ASSETS.explosion[fi];
+      if (img) g.drawImage(img, ex.x - ex.size / 2, ex.y - ex.size / 2, ex.size, ex.size);
+    }
+    g.restore();
+  }
 
   renderFloaters();
   g.restore();
@@ -535,6 +628,13 @@ function frame(t) {
   requestAnimationFrame(frame);
 }
 
+// Boot: render a LOADING frame until every asset settles (per-slot failures are
+// tolerated), then rebind sprites to pack art and enter the menu (or a dev
+// screen). A menu click before ASSETS.ready can't land — mode is 'loading'.
 const devScreen = new URLSearchParams(location.search).get('screen');
-if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss') seedDevScreen(devScreen);
+loadAssets().then(() => {
+  initSprites(paint); // rebind SPRITES to pack art now that ASSETS.ready is true
+  if (devScreen === 'upgrade' || devScreen === 'gameover' || devScreen === 'boss') seedDevScreen(devScreen);
+  else mode = 'menu';
+});
 requestAnimationFrame(frame);

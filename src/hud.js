@@ -12,8 +12,18 @@ const DIM = '#8a879a';
 const ACCENT = '#ffd75e';
 const TAU = Math.PI * 2;
 
-// Ship-paint palette (spec G): white, red, blue, green, yellow, purple.
-const PAINTS = ['#e8e6d8', '#e0524a', '#5ea8ff', '#63d471', '#ffd75e', '#b07fe8'];
+// Ship-paint families (v4): each maps to a pack hull family. Swatch hues are
+// sampled to match the actual hulls. Slot order matches the v3 swatches
+// (white→metalic, red, blue, green→greyblue, yellow→orange, purple) so returning
+// players' muscle memory and legacy-hex migration line up.
+const FAMILIES = [
+  { key: 'metalic', hue: '#b8c4d8' },
+  { key: 'red', hue: '#e0524a' },
+  { key: 'blue', hue: '#5ea8ff' },
+  { key: 'greyblue', hue: '#5f7a8c' },
+  { key: 'orange', hue: '#f6960a' },
+  { key: 'purple', hue: '#b07fe8' },
+];
 
 // ---------------------------------------------------------------- helpers ----
 function roundRect(g, x, y, w, h, r) {
@@ -192,24 +202,36 @@ export function paintRects(w, h) {
   const u = Math.max(12, Math.round(w / 90));
   const sw = Math.max(36, Math.round(u * 2.6));
   const gap = Math.round(sw * 0.45);
-  const total = PAINTS.length * sw + (PAINTS.length - 1) * gap;
+  const total = FAMILIES.length * sw + (FAMILIES.length - 1) * gap;
   const x0 = (w - total) / 2;
   const y = Math.round(h * 0.8);
-  return PAINTS.map((color, i) => ({ x: x0 + i * (sw + gap), y, w: sw, h: sw, color }));
+  // `family` is the persisted paint value; `hue` is the swatch colour.
+  return FAMILIES.map((f, i) => ({ x: x0 + i * (sw + gap), y, w: sw, h: sw, family: f.key, hue: f.hue }));
 }
 
 function drawPicker(g, w, h, paint) {
   const u = Math.max(12, Math.round(w / 90));
   const rects = paintRects(w, h);
+  // Selected-ship preview, ~3× native, centred above the swatch row.
+  if (SPRITES.shipPreview) {
+    const spr = SPRITES.shipPreview;
+    const scale = 3;
+    const pw = spr.width * scale;
+    const ph = spr.height * scale;
+    const px = w / 2 - pw / 2;
+    const py = rects[0].y - Math.round(u * 1.6) - ph;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(spr, px, py, pw, ph);
+  }
   g.textAlign = 'center';
   g.textBaseline = 'bottom';
   g.font = `${u}px ${FONT}`;
   g.fillStyle = DIM;
   g.fillText('SHIP COLOR', w / 2, rects[0].y - Math.round(u * 0.6));
   for (const r of rects) {
-    g.fillStyle = r.color;
+    g.fillStyle = r.hue;
     g.fillRect(r.x, r.y, r.w, r.h);
-    if (r.color === paint) {
+    if (r.family === paint) {
       g.strokeStyle = INK;
       g.lineWidth = 3;
       g.strokeRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6);
@@ -224,7 +246,7 @@ function drawPicker(g, w, h, paint) {
 }
 
 // ------------------------------------------------------------------ MENU ------
-export function drawMenu(g, w, h, best, paint = '#e8e6d8', board = []) {
+export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
   const u = Math.max(12, Math.round(w / 90));
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -256,7 +278,7 @@ export function drawMenu(g, w, h, best, paint = '#e8e6d8', board = []) {
 }
 
 // -------------------------------------------------------------- GAME OVER -----
-export function drawGameOver(g, w, h, run, best, paint = '#e8e6d8', board = [], placedIdx = -1) {
+export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], placedIdx = -1) {
   const u = Math.max(12, Math.round(w / 90));
   g.textAlign = 'center';
   g.textBaseline = 'middle';

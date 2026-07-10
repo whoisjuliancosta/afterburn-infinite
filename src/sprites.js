@@ -2,7 +2,55 @@
 // Browser-only module (uses document.createElement). Never imported by tests.
 // All art faces +x (right). '.' = transparent. Entities are FRAME ARRAYS for
 // a subtle 2-frame idle; render picks a frame with Math.floor(t*6)%2.
+//
+// v4: when the asset pack is loaded (ASSETS.ready), each SPRITES slot below is
+// backed by pre-rotated pack art; otherwise the v3 code-generated sprite for
+// that slot is used. Gems/hearts/pips/icons/shieldHeart stay code-generated.
+import { ASSETS } from './assets.js';
+
 export const SPRITES = {};
+
+// Player paint is now a family KEY. Each family maps to a representative hull
+// hex used ONLY for the code-gen fallback ship (sampled from the pack hulls).
+const FAMILY_HEX = {
+  metalic: '#c0cbdc',
+  red: '#e0524a',
+  blue: '#5ea8ff',
+  purple: '#b07fe8',
+  orange: '#f6960a',
+  greyblue: '#5f7a8c',
+};
+
+// Enemy type -> pack ship key (variant chosen by eye for silhouette distinctness).
+const ENEMY_ART = {
+  drifter: 'green_03',
+  darter: 'darkgrey_01',
+  spitter: 'darkgrey_04',
+  orbiter: 'green_02',
+  weaver: 'green_04',
+  splitter: 'darkgrey_02',
+  mini: 'darkgrey_06',
+};
+
+// Wrap a single canvas as a 2-frame array so drawFrame's frame flip just repeats
+// (the pack has no idle frames — acceptable per spec).
+function packFrames(canvas) {
+  return [canvas, canvas];
+}
+
+// Rotate a canvas 90° counter-clockwise (for the nose-up menu preview of the
+// code-gen ship, which faces +x).
+function rotateCCWCanvas(src) {
+  const c = document.createElement('canvas');
+  c.width = src.height;
+  c.height = src.width;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.translate(c.width / 2, c.height / 2);
+  g.rotate(-Math.PI / 2);
+  g.drawImage(src, -src.width / 2, -src.height / 2);
+  return c;
+}
 
 export function makeSprite(rows, palette, scale = 4) {
   const c = document.createElement('canvas');
@@ -445,13 +493,17 @@ function buildIcons() {
 }
 
 // ------------------------------------------------------------ initSprites ----
-export function initSprites(paint = '#e8e6d8') {
-  const hullShade = darken(paint, 0.62);
-  const shipA = { ...SHIP_FIXED, H: paint, h: hullShade };
-  const shipB = { ...SHIP_FIXED_DIM, H: paint, h: hullShade };
+// `paint` is a family key ('metalic'|'red'|'blue'|'purple'|'orange'|'greyblue').
+export function initSprites(paint = 'metalic') {
+  const hull = FAMILY_HEX[paint] || FAMILY_HEX.metalic;
+  const hullShade = darken(hull, 0.62);
+  const shipA = { ...SHIP_FIXED, H: hull, h: hullShade };
+  const shipB = { ...SHIP_FIXED_DIM, H: hull, h: hullShade };
+
+  // --- Code-gen fallbacks (always built so every slot has art) ---
   SPRITES.ship = makeFrames(SHIP_ROWS, shipA, shipB);
 
-  const flamePal = { F: FLAME_CORE, P: paint };
+  const flamePal = { F: FLAME_CORE, P: hull };
   SPRITES.flame = [makeSprite(FLAME_F1, flamePal), makeSprite(FLAME_F2, flamePal)];
 
   SPRITES.drifter = makeFrames(DRIFTER_ROWS, DRIFTER_A, DRIFTER_B);
@@ -470,4 +522,20 @@ export function initSprites(paint = '#e8e6d8') {
   SPRITES.dashPip = makeSprite(DASH_PIP_ROWS, DASH_PIP_PAL);
 
   SPRITES.icons = buildIcons();
+
+  // --- Pack-art overrides (per slot, only when the PNG actually loaded) ---
+  // Menu preview defaults to a nose-up rotation of the code-gen ship.
+  SPRITES.shipPreview = rotateCCWCanvas(SPRITES.ship[0]);
+
+  if (ASSETS.ready) {
+    const shipArt = ASSETS.ships[`${paint}_01`];
+    if (shipArt) SPRITES.ship = packFrames(shipArt);
+    const shipUp = ASSETS.shipsUp[`${paint}_01`];
+    if (shipUp) SPRITES.shipPreview = shipUp;
+
+    for (const [type, key] of Object.entries(ENEMY_ART)) {
+      const art = ASSETS.ships[key];
+      if (art) SPRITES[type] = packFrames(art);
+    }
+  }
 }
