@@ -9,12 +9,15 @@ export function createInput(canvas) {
     mouseY = e.offsetY;
   });
 
-  let pausePending = false, rocketPending = false, legendPending = false, enterPending = false;
+  let pausePending = false, rocketPending = false, legendPending = false, enterPending = false, escPending = false;
   let typed = []; // printable chars + 'Backspace' captured this frame (name field)
 
   window.addEventListener('keydown', e => {
     // edge-triggered pause: Esc or P, latch only on the first press
     if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) pausePending = true;
+    // edge-triggered Escape only — used to blur the focused name field without
+    // consuming 'P' (which is a printable char that must append to the name).
+    if (e.code === 'Escape' && !e.repeat) escPending = true;
     // edge-triggered legend toggle: L, latch on first press (held L can't strobe)
     if (e.code === 'KeyL' && !e.repeat) legendPending = true;
     // edge-triggered Enter (menu start / name-field blur)
@@ -61,6 +64,7 @@ export function createInput(canvas) {
         rocketPressed: rocketPending,
         legendPressed: legendPending,
         enterPressed: enterPending,
+        escPressed: escPending,
         typed,
       };
       taps = 0;
@@ -69,6 +73,7 @@ export function createInput(canvas) {
       rocketPending = false;
       legendPending = false;
       enterPending = false;
+      escPending = false;
       typed = []; // snap.typed keeps the old array reference
       return snap;
     },

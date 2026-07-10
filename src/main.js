@@ -813,7 +813,8 @@ function frame(t) {
     if (mode === 'menu') {
       if (nameFocused) {
         for (const ch of snap.typed) typeName(ch);
-        if (snap.enterPressed || snap.pausePressed) { nameFocused = false; saveName(); }
+        // Blur on Enter or Esc only — not P (a printable char that must append).
+        if (snap.enterPressed || snap.escPressed) { nameFocused = false; saveName(); }
       } else if (snap.legendPressed) {
         mode = 'legend'; // L opens the legend
       } else if (snap.enterPressed) {
