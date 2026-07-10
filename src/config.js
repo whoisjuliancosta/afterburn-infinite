@@ -49,13 +49,13 @@ export const ENEMIES = {
 };
 
 export const WAVE = {
-  baseBudget: 4,
-  budgetPerWave: 2.5,        // budget = round(4 + 2.5*(wave-1) + 1.5*power + late)
+  baseBudget: 12,            // wave 1 ≈ 10-12 enemies (was 4 — "first wave ends after 4 enemies")
+  budgetPerWave: 3,          // budget = round(base + perWave*(wave-1) + 1.5*power + late)
   powerBudget: 1.5,          // extra budget per player upgrade taken this run
   lateBudgetPerWave: 3,      // extra budget per wave past lateStart (accelerating)
   lateStart: 10,             // wave after which the late budget term kicks in
   scalePerWave: 0.07,        // +7% enemy hp/speed per wave
-  spawnInterval: 1.1,        // s between trickled spawns at wave 1 (base)
+  spawnInterval: 0.9,        // s between trickled spawns at wave 1 (base) — bigger waves shouldn't drag
   spawnIntervalFloor: 0.22,  // fastest trickle
   spawnIntervalStep: 0.06,   // spacing shaved per wave past 1
   telegraphTime: 1.0,        // s of spawn warning marker
