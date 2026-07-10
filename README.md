@@ -4,7 +4,7 @@
 
 ## ▶️ Play it now
 
-**<a href="https://whoisjuliancosta.github.io/arena-space-shooter/">whoisjuliancosta.github.io/arena-space-shooter</a>**
+**<a href="https://whoisjuliancosta.github.io/afterburn-infinite/">whoisjuliancosta.github.io/afterburn-infinite</a>**
 
 Desktop browser + keyboard & mouse required.
 
@@ -33,8 +33,8 @@ Desktop browser + keyboard & mouse required.
 ## Running locally
 
 ```bash
-git clone https://github.com/whoisjuliancosta/arena-space-shooter.git
-cd arena-space-shooter
+git clone https://github.com/whoisjuliancosta/afterburn-infinite.git
+cd afterburn-infinite
 python3 -m http.server 8000   # or: npx serve -l 8000
 # open http://localhost:8000
 ```
