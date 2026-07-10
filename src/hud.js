@@ -151,6 +151,41 @@ function drawPip(g, x, y, size, fill) {
   g.globalAlpha = 1;
 }
 
+// ----------------------------------------------------------------- BOSS BAR ---
+// Top-center under the wave label. ~34% screen width, red fill over a dark
+// track with a thin border. Visibility is the caller's call (only draw while a
+// boss is alive). Fraction guarded against a zero maxHp.
+export function drawBossBar(g, w, boss) {
+  const u = Math.max(12, Math.round(w / 90));
+  const margin = Math.round(u * 0.9);
+  const bw = Math.round(w * 0.34);
+  const bh = Math.round(u * 0.85);
+  const bx = Math.round((w - bw) / 2);
+  const by = margin + Math.round(u * 2.3); // clears the wave label above
+  const frac = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
+  g.fillStyle = '#1a0f16';                 // dark track
+  g.fillRect(bx, by, bw, bh);
+  g.fillStyle = '#e0362f';                 // red fill
+  g.fillRect(bx, by, Math.round(bw * frac), bh);
+  g.strokeStyle = 'rgba(232,230,216,0.55)'; // thin border
+  g.lineWidth = 1;
+  g.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+}
+
+// ------------------------------------------------------------------- PAUSE -----
+export function drawPause(g, w, h) {
+  const u = Math.max(12, Math.round(w / 90));
+  g.fillStyle = 'rgba(11, 11, 18, 0.55)'; // dim overlay
+  g.fillRect(0, 0, w, h);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = INK;
+  g.font = `bold ${Math.round(2 * u)}px ${FONT}`;
+  g.fillText('PAUSED — Esc/P to resume', w / 2, h / 2);
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+}
+
 // -------------------------------------------------------------- PAINT PICKER --
 // Single source of swatch geometry — used for drawing and click hit-testing.
 export function paintRects(w, h) {
@@ -189,7 +224,8 @@ function drawPicker(g, w, h, paint) {
 }
 
 // ------------------------------------------------------------------ MENU ------
-export function drawMenu(g, w, h, best, paint = '#e8e6d8') {
+export function drawMenu(g, w, h, best, paint = '#e8e6d8', board = []) {
+  const u = Math.max(12, Math.round(w / 90));
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = INK;
@@ -203,28 +239,102 @@ export function drawMenu(g, w, h, best, paint = '#e8e6d8') {
     g.fillStyle = ACCENT;
     g.fillText(`BEST ${best}`, w / 2, h * 0.55);
   }
+  // Top-3 leaderboard, small, under best.
+  if (board && board.length) {
+    g.font = `${Math.round(1.05 * u)}px ${FONT}`;
+    g.fillStyle = DIM;
+    board.slice(0, 3).forEach((e, i) => {
+      g.fillText(`${i + 1}.  ${e.score}  ·  wave ${e.wave}`, w / 2, h * 0.60 + i * Math.round(1.6 * u));
+    });
+  }
   g.fillStyle = INK;
-  g.fillText('— click to start —', w / 2, h * 0.64);
+  g.font = `16px ${FONT}`;
+  g.fillText('— click to start —', w / 2, h * 0.72);
   drawPicker(g, w, h, paint);
   g.textAlign = 'left';
   g.textBaseline = 'top';
 }
 
 // -------------------------------------------------------------- GAME OVER -----
-export function drawGameOver(g, w, h, run, best, paint = '#e8e6d8') {
+export function drawGameOver(g, w, h, run, best, paint = '#e8e6d8', board = [], placedIdx = -1) {
+  const u = Math.max(12, Math.round(w / 90));
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = '#e6743e';
   g.font = `bold 36px ${FONT}`;
-  g.fillText('SHIP DESTROYED', w / 2, h * 0.26);
+  g.fillText('SHIP DESTROYED', w / 2, h * 0.15);
   g.fillStyle = INK;
   g.font = `20px ${FONT}`;
-  g.fillText(`score ${run.score}   ·   wave ${run.wave}`, w / 2, h * 0.36);
+  g.fillText(`score ${run.score}   ·   wave ${run.wave}`, w / 2, h * 0.23);
   g.fillStyle = run.score >= best ? ACCENT : DIM;
-  g.fillText(run.score >= best ? 'NEW BEST!' : `best ${best}`, w / 2, h * 0.42);
+  g.fillText(run.score >= best ? 'NEW BEST!' : `best ${best}`, w / 2, h * 0.29);
+
+  // Two panels: run stats (left) + leaderboard (right).
+  const st = run.stats || {};
+  const acc = st.shotsFired > 0 ? Math.round((st.shotsHit / st.shotsFired) * 100) : 0;
+  const secs = Math.floor(st.runTime || 0);
+  const timeStr = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  const statLines = [
+    ['kills', st.kills || 0],
+    ['accuracy', `${acc}%`],
+    ['waves', run.wave],
+    ['gems', st.gemsCollected || 0],
+    ['dashes', st.dashes || 0],
+    ['boss kills', st.bossKills || 0],
+    ['time', timeStr],
+  ];
+
+  const panelTop = Math.round(h * 0.4);
+  const lineH = Math.round(u * 1.6);
+  const colW = Math.round(u * 12);
+  const gap = Math.round(u * 3);
+  const leftX = Math.round(w / 2 - gap / 2 - colW);
+  const rightX = Math.round(w / 2 + gap / 2);
+  const rowY = (i) => panelTop + Math.round(u * 1.9) + i * lineH;
+
+  g.textBaseline = 'middle';
+  // Left: RUN STATS
+  g.textAlign = 'left';
+  g.fillStyle = ACCENT;
+  g.font = `bold ${Math.round(1.1 * u)}px ${FONT}`;
+  g.fillText('RUN STATS', leftX, panelTop);
+  g.font = `${Math.round(1.05 * u)}px ${FONT}`;
+  statLines.forEach(([label, val], i) => {
+    const y = rowY(i);
+    g.textAlign = 'left';
+    g.fillStyle = DIM;
+    g.fillText(label, leftX, y);
+    g.textAlign = 'right';
+    g.fillStyle = INK;
+    g.fillText(String(val), leftX + colW, y);
+  });
+
+  // Right: LEADERBOARD (top 5), placed run highlighted.
+  g.textAlign = 'left';
+  g.fillStyle = ACCENT;
+  g.font = `bold ${Math.round(1.1 * u)}px ${FONT}`;
+  g.fillText('LEADERBOARD', rightX, panelTop);
+  g.font = `${Math.round(1.05 * u)}px ${FONT}`;
+  if (!board || board.length === 0) {
+    g.fillStyle = DIM;
+    g.fillText('no runs yet', rightX, rowY(0));
+  } else {
+    board.slice(0, 5).forEach((e, i) => {
+      const y = rowY(i);
+      const hot = i === placedIdx;
+      g.textAlign = 'left';
+      g.fillStyle = hot ? ACCENT : (i === 0 ? INK : DIM);
+      g.fillText(`${i + 1}.  ${e.score}`, rightX, y);
+      g.textAlign = 'right';
+      g.fillStyle = hot ? ACCENT : DIM;
+      g.fillText(`wave ${e.wave}`, rightX + colW, y);
+    });
+  }
+
+  g.textAlign = 'center';
   g.fillStyle = DIM;
   g.font = `16px ${FONT}`;
-  g.fillText('click or press R to fly again', w / 2, h * 0.52);
+  g.fillText('click or press R to fly again', w / 2, h * 0.72);
   drawPicker(g, w, h, paint);
   g.textAlign = 'left';
   g.textBaseline = 'top';
