@@ -385,7 +385,7 @@ function render() {
   }
 
   const blinking = ship.iframes > 0 && Math.sin(ship.iframes * 30) > 0;
-  if (!blinking) drawFrame(SPRITES.ship, ship.x, ship.y, ship.angle);
+  if (!blinking && mode !== 'gameover') drawFrame(SPRITES.ship, ship.x, ship.y, ship.angle); // destroyed ship isn't drawn under the game-over overlay
   if (ship.shield.up) {
     g.strokeStyle = '#5ea8ff';
     g.lineWidth = 2;
@@ -484,6 +484,7 @@ function seedDevScreen(which) {
       entry,
     );
     placedIdx = placed(board, entry);
+    floaters.list = []; // clean overlay for the dev screenshot (matches upgrade/boss seeds)
     mode = 'gameover';
   }
 }
