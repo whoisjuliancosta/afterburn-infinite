@@ -3,7 +3,7 @@
 // Imports `multiplier` from run.js (the only logic module it may touch) and
 // SPRITES from the browser sprites module.
 import { multiplier } from './run.js';
-import { DASH } from './config.js';
+import { ROCKET } from './config.js';
 import { SPRITES } from './sprites.js';
 
 const FONT = 'monospace';
@@ -57,7 +57,9 @@ function wrapText(g, text, maxW) {
 }
 
 // ------------------------------------------------------------------- HUD ------
-export function drawHud(g, w, run, ship) {
+// `rockets` (optional) is the rockets store { cooldown } — when present a rocket
+// cooldown indicator is drawn beside the boost bar. Omitted until T7 wiring.
+export function drawHud(g, w, run, ship, rockets = null) {
   const u = Math.max(12, Math.round(w / 90));
   const margin = Math.round(u * 0.9);
   g.textBaseline = 'top';
@@ -116,48 +118,111 @@ export function drawHud(g, w, run, ship) {
       g.globalAlpha = 1;
     }
 
-    // Dash pips row (below hearts)
-    if (SPRITES.dashPip && ship.dash) {
-      const pipS = Math.round(1.2 * u);
-      const pgap = Math.round(u * 0.28);
-      const pstep = pipS + pgap;
-      const py = margin + heartH + gap;
-      const charges = ship.dash.charges;
-      const progress = Math.min(1, Math.max(0, 1 - ship.dash.recharge / DASH.rechargeTime));
-      for (let i = 0; i < ship.dash.max; i++) {
-        const x = rightX - (ship.dash.max - i) * pstep;
-        let fill;
-        if (i < charges) fill = 1;
-        else if (i === charges) fill = progress;
-        else fill = 0;
-        drawPip(g, x, py, pipS, fill);
-      }
+    // Under-hearts stack (all right-aligned to the hearts row):
+    //   1) heart-progress mini-bar (red, fraction toward the next heart)
+    //   2) boost bar (cyan, one segment per unit, shows the meter fraction)
+    // A rocket cooldown indicator sits to the left of the boost bar.
+    const barLeft = rightX - ship.maxHp * step;
+    const barRight = rightX - gap;      // right edge of the last heart
+    const barW = Math.max(1, barRight - barLeft);
+
+    // 1) heart-progress mini-bar
+    const hpH = Math.max(3, Math.round(u * 0.28));
+    const hpY = margin + heartH + Math.round(u * 0.2);
+    const hpFrac = Math.max(0, Math.min(1, run.heartProgress || 0));
+    g.fillStyle = '#2a1216';
+    g.fillRect(barLeft, hpY, barW, hpH);
+    g.fillStyle = '#e0362f';
+    g.fillRect(barLeft, hpY, Math.round(barW * hpFrac), hpH);
+    g.strokeStyle = 'rgba(224,82,74,0.5)';
+    g.lineWidth = 1;
+    g.strokeRect(barLeft + 0.5, hpY + 0.5, barW - 1, hpH - 1);
+
+    // 2) boost bar
+    const bH = Math.max(6, Math.round(u * 0.6));
+    const bY = hpY + hpH + Math.round(u * 0.22);
+    if (ship.boost) drawBoostBar(g, barLeft, bY, barW, bH, ship.boost);
+
+    // Rocket cooldown indicator, left of the boost bar.
+    if (rockets) {
+      const rs = Math.round(bH * 1.7);
+      const rcx = barLeft - Math.round(u * 0.5) - rs / 2;
+      const rcy = bY + bH / 2;
+      const cd = Math.max(0, rockets.cooldown || 0);
+      drawRocketCooldown(g, rcx, rcy, rs, cd);
     }
   }
   g.textAlign = 'left';
 }
 
-// A dash pip: full-alpha diamond when ready, low-alpha base + a rising fill for
-// the charge currently recharging.
-function drawPip(g, x, y, size, fill) {
-  const spr = SPRITES.dashPip;
-  if (fill >= 1) {
-    g.globalAlpha = 1;
-    g.drawImage(spr, x, y, size, size);
-  } else {
-    g.globalAlpha = 0.22;
-    g.drawImage(spr, x, y, size, size);
-    if (fill > 0) {
-      g.save();
-      const fh = size * fill;
-      g.beginPath();
-      g.rect(x, y + size - fh, size, fh);
-      g.clip();
-      g.globalAlpha = 0.85;
-      g.drawImage(spr, x, y, size, size);
-      g.restore();
+// Boost bar: dark track split into `units` segments, cyan fill shows the meter
+// (each unit = 100%). meter ∈ [0, units]; a partly-charged unit fills partially.
+function drawBoostBar(g, x, y, w, h, boost) {
+  const units = Math.max(1, boost.units | 0);
+  const segGap = 2;
+  const segW = (w - segGap * (units - 1)) / units;
+  for (let i = 0; i < units; i++) {
+    const sx = x + i * (segW + segGap);
+    g.fillStyle = '#0c2a30';                 // dark track
+    g.fillRect(sx, y, segW, h);
+    const f = Math.max(0, Math.min(1, (boost.meter || 0) - i));
+    if (f > 0) {
+      g.fillStyle = '#3ecfe6';               // cyan fill
+      g.fillRect(sx, y, segW * f, h);
     }
+    g.strokeStyle = 'rgba(94,208,230,0.55)'; // thin border
+    g.lineWidth = 1;
+    g.strokeRect(sx + 0.5, y + 0.5, segW - 1, h - 1);
   }
+}
+
+// Rocket cooldown indicator: the missile sprite (nose up) at full alpha when
+// ready, dimmed while cooling with a radial sweep that fills as it recharges.
+function drawRocketCooldown(g, cx, cy, size, cooldown) {
+  const ready = cooldown <= 0;
+  const frac = Math.max(0, Math.min(1, 1 - cooldown / ROCKET.cooldown)); // 0→1 = cooling→ready
+  // Cooling sweep ring underneath the icon.
+  if (!ready) {
+    g.strokeStyle = 'rgba(94,208,230,0.25)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(cx, cy, size * 0.62, 0, TAU);
+    g.stroke();
+    g.strokeStyle = '#3ecfe6';
+    g.beginPath();
+    g.arc(cx, cy, size * 0.62, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
+    g.stroke();
+  }
+  const spr = SPRITES.rocket;
+  const img = Array.isArray(spr) ? spr[0] : spr;
+  if (img) {
+    const nat = Math.max(img.width, img.height) || 1;
+    const s = size / nat;
+    const iw = img.width * s, ih = img.height * s;
+    g.save();
+    g.globalAlpha = ready ? 1 : 0.35;
+    g.imageSmoothingEnabled = false;
+    g.translate(cx, cy);
+    g.rotate(-Math.PI / 2); // sprite faces +x; point it up in the HUD
+    g.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+    g.restore();
+    g.globalAlpha = 1;
+  }
+}
+
+// ------------------------------------------------------------- FIELD RING ------
+// Faint cyan ring at the gem-magnet radius around the ship so the pull zone is
+// visible (spec C). ~0.08 alpha with a gentle pulse driven by the `t` clock.
+export function drawFieldRing(g, ship, radius, t = 0) {
+  const pulse = 1 + Math.sin(t * 1.6) * 0.02;
+  g.save();
+  g.globalAlpha = 0.08 + 0.02 * (Math.sin(t * 1.6) * 0.5 + 0.5);
+  g.strokeStyle = '#5fe8ff';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  g.arc(ship.x, ship.y, radius * pulse, 0, TAU);
+  g.stroke();
+  g.restore();
   g.globalAlpha = 1;
 }
 
@@ -255,7 +320,7 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = []) {
   g.fillText('UNTITLED SPACE SHOOTER', w / 2, h * 0.28);
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('W forward · S back · A/D strafe · aim with mouse · SPACE dash', w / 2, h * 0.42);
+  g.fillText('W thrust · aim with mouse · hold SPACE boost · right-click rocket', w / 2, h * 0.42);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
   if (best > 0) {
     g.fillStyle = ACCENT;
@@ -308,7 +373,7 @@ export function drawGameOver(g, w, h, run, best, paint = 'metalic', board = [], 
     ['accuracy', `${acc}%`],
     ['waves', run.wave],
     ['gems', st.gemsCollected || 0],
-    ['dashes', st.dashes || 0],
+    ['boost', `${(st.boostTime || 0).toFixed(1)}s`],
     ['boss kills', st.bossKills || 0],
     ['time', timeStr],
   ];
@@ -540,7 +605,8 @@ function previewHeart(g, r, t) {
   }
 }
 
-function previewDash(g, r, t) {
+// Boost Tank: a cyan afterimage streak (a boosting ship's trail).
+function previewBoost(g, r, t) {
   const cy = r.y + r.h / 2;
   const p = (t * 0.8) % 1;
   const x = r.x + 6 + p * (r.w - 12);
@@ -549,6 +615,26 @@ function previewDash(g, r, t) {
     dot(g, '#3ecfe6', x - k * (r.w * 0.06), cy, Math.max(1.5, r.h * 0.08));
   }
   g.globalAlpha = 1;
+}
+
+// Attractor: gems spiralling inward to the ship, with a faint pull ring.
+function previewAttractor(g, r, t) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  const ring = Math.min(r.w, r.h) * 0.42;
+  g.globalAlpha = 0.35;
+  g.strokeStyle = '#5fe8ff';
+  g.lineWidth = 1.5;
+  g.beginPath(); g.arc(cx, cy, ring, 0, TAU); g.stroke();
+  g.globalAlpha = 1;
+  for (let k = 0; k < 4; k++) {
+    const p = (t * 0.6 + k / 4) % 1;      // 1 → 0 as it's pulled in
+    const rad = ring * (1 - p);
+    const ang = k * (TAU / 4) + t * 1.2;
+    g.globalAlpha = 0.4 + 0.6 * p;
+    dot(g, '#5fe8ff', cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad, Math.max(1.5, r.h * 0.07));
+  }
+  g.globalAlpha = 1;
+  dot(g, '#e8fdff', cx, cy, Math.max(2, r.h * 0.08));
 }
 
 function previewStreaks(g, r, t) {
@@ -631,8 +717,8 @@ const PREVIEWS = {
   executioner: previewCrit,
   hull: previewHeart,
   secondwind: previewHeart,
-  extradash: previewDash,
-  recovery: previewDash,
+  boosttank: previewBoost,
+  attractor: previewAttractor,
   velocity: previewStreaks,
   engine: previewStreaks,
   overclock: previewStreaks,

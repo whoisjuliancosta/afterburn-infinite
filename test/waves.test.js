@@ -15,6 +15,15 @@ test('budget follows round(4 + 2.5*(wave-1) + 1.5*power)', () => {
   assert.equal(waveBudget(3, 2), 12);    // 4 + 5 + 3 = 12
 });
 
+test('budget accelerates past wave 10 (+3 per wave beyond lateStart)', () => {
+  // wave <= 10: no late term. wave > 10: + 3*(wave-10).
+  assert.equal(waveBudget(10, 0), 27);  // 4 + 22.5 = 26.5 → 27 (unchanged)
+  assert.equal(waveBudget(11, 0), 32);  // 4 + 25 + 3*1 = 32
+  assert.equal(waveBudget(15, 0), 54);  // 4 + 35 + 3*5 = 54
+  assert.equal(waveBudget(20, 0), 82);  // 4 + 47.5 + 3*10 = 81.5 → 82
+  assert.equal(waveBudget(15, 4), 60);  // 4 + 35 + 6 + 15 = 60 (power still counts)
+});
+
 test('buildWave spends the exact budget on buyable types (non-boss waves)', () => {
   for (let wave = 1; wave <= 12; wave++) {
     if (isBossWave(wave)) continue;

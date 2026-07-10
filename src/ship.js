@@ -1,5 +1,5 @@
 // src/ship.js
-import { SHIP, GUN, DASH } from './config.js';
+import { SHIP, GUN, BOOST } from './config.js';
 import { TAU } from './utils.js';
 
 export function createShip(x, y) {
@@ -9,82 +9,56 @@ export function createShip(x, y) {
     radius: SHIP.radius,
     hp: SHIP.maxHp, maxHp: SHIP.maxHp,
     iframes: 0, cooldown: 0,
+    boosting: false,
+    // Runs start with a full first unit; capacity grows with Boost Tank upgrades.
+    // stacks counts Boost Tank picks (offer-excluded at 2).
+    boost: { meter: 1, units: BOOST.baseUnits, stacks: 0 },
     mods: {
       fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
-      critChance: 0, critMult: 0, dashRate: 1, bounce: 0,
+      critChance: 0, critMult: 0, magnet: 1, bounce: 0,
     },
     shield: { owned: false, up: false },
-    dash: { charges: DASH.charges, max: DASH.charges, recharge: 0, stacks: 0 },
   };
 }
 
-// Consume a dash charge: impulse along the nose, clamp to the dash speed cap,
-// grant iframes (never shortening a longer window), start the recharge if idle.
-export function tryDash(ship, dirX = 0, dirY = 0) {
-  if (ship.dash.charges <= 0) return false;
-  ship.dash.charges -= 1;
-
-  // Dash follows movement input when there is one, else the nose.
-  let dx = dirX, dy = dirY;
-  const dm = Math.hypot(dx, dy);
-  if (dm > 0) { dx /= dm; dy /= dm; }
-  else { dx = Math.cos(ship.angle); dy = Math.sin(ship.angle); }
-  ship.vx += dx * DASH.impulse;
-  ship.vy += dy * DASH.impulse;
-  const cap = SHIP.maxSpeed * ship.mods.engine * DASH.speedCapMult;
-  const sp = Math.hypot(ship.vx, ship.vy);
-  if (sp > cap) { ship.vx *= cap / sp; ship.vy *= cap / sp; }
-
-  ship.iframes = Math.max(ship.iframes, DASH.iframes);
-
-  // start a recharge cycle only if one isn't already running
-  if (ship.dash.charges < ship.dash.max && ship.dash.recharge <= 0) {
-    ship.dash.recharge = DASH.rechargeTime;
-  }
-  return true;
-}
-
-// Every point of dealt damage shaves the active recharge timer (no-op at full).
-export function creditDash(ship, damage) {
-  if (ship.dash.charges >= ship.dash.max) return;
-  ship.dash.recharge = Math.max(0, ship.dash.recharge - DASH.damageCredit * damage);
-}
-
-// World-space thrust direction for the current input, RELATIVE TO FACING:
-// W = forward (toward the cursor), S = back, A/D = strafe. Returns a unit
-// vector or null when there is no movement input. Shared by thrust, dash
-// and the thruster plume so they can never disagree.
-export function moveDir(ship, input) {
-  const f = -(input.moveY || 0); // W gives moveY -1 → forward +1
-  const st = input.moveX || 0;   // D gives +1 → strafe right
-  if (!f && !st) return null;
-  const cos = Math.cos(ship.angle), sin = Math.sin(ship.angle);
-  // forward = (cos, sin); right = (-sin, cos) with screen-y pointing down
-  const x = f * cos - st * sin;
-  const y = f * sin + st * cos;
-  const m = Math.hypot(x, y);
-  return { x: x / m, y: y / m };
+// Refill the boost meter (blue-gem pickups), clamped to current capacity.
+export function addBoost(ship, amount) {
+  ship.boost.meter = Math.min(ship.boost.units, ship.boost.meter + amount);
 }
 
 export function updateShip(ship, input, dt, arena) {
-  // The nose tracks the cursor instantly; movement keys are relative to the
-  // facing: W = toward cursor, S = away, A/D = strafe.
+  // The nose tracks the cursor instantly.
   if (input.aimX != null) {
     ship.angle = Math.atan2(input.aimY - ship.y, input.aimX - ship.x);
   }
 
-  const dir = moveDir(ship, input);
-  if (dir) {
-    const a = SHIP.thrust * ship.mods.engine;
-    ship.vx += dir.x * a * dt;
-    ship.vy += dir.y * a * dt;
+  const cos = Math.cos(ship.angle), sin = Math.sin(ship.angle);
+  const a = SHIP.thrust * ship.mods.engine;
+
+  // W / ↑ thrusts toward the nose.
+  if (input.thrust) {
+    ship.vx += cos * a * dt;
+    ship.vy += sin * a * dt;
+  }
+
+  // Continuous boost: while Space is held and the meter has charge, drain it,
+  // add extra thrust toward the nose (independent of W) and lift the speed cap
+  // for this frame. ship.boosting is true only while actually draining.
+  ship.boosting = false;
+  let capMult = 1;
+  if (input.boosting && ship.boost.meter > 0) {
+    ship.boost.meter = Math.max(0, ship.boost.meter - BOOST.drainPerSec * dt);
+    ship.vx += cos * a * BOOST.thrustMult * dt;
+    ship.vy += sin * a * BOOST.thrustMult * dt;
+    capMult = BOOST.speedMult;
+    ship.boosting = true;
   }
 
   const damp = Math.exp(-SHIP.friction * dt);
   ship.vx *= damp;
   ship.vy *= damp;
 
-  const max = SHIP.maxSpeed * ship.mods.engine;
+  const max = SHIP.maxSpeed * ship.mods.engine * capMult;
   const sp = Math.hypot(ship.vx, ship.vy);
   if (sp > max) { ship.vx *= max / sp; ship.vy *= max / sp; }
 
@@ -99,17 +73,6 @@ export function updateShip(ship, input, dt, arena) {
 
   ship.iframes = Math.max(0, ship.iframes - dt);
   ship.cooldown = Math.max(0, ship.cooldown - dt);
-
-  // Recharge ticking: only while below max. tryDash starts the cycle; here we
-  // count down (scaled by dashRate) and grant a charge on reaching 0, restarting
-  // the timer when there's still a charge left to earn.
-  if (ship.dash.charges < ship.dash.max) {
-    ship.dash.recharge -= dt * (ship.mods.dashRate || 1);
-    if (ship.dash.recharge <= 0) {
-      ship.dash.charges += 1;
-      ship.dash.recharge = ship.dash.charges < ship.dash.max ? DASH.rechargeTime : 0;
-    }
-  }
 }
 
 export function updateGun(ship, input, dt, rng) {

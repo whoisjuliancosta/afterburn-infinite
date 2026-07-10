@@ -3,19 +3,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scaleFor, spawnEnemy, updateEnemy, deathSpawns } from '../src/enemies.js';
 import { ENEMIES } from '../src/config.js';
-import { TAU } from '../src/utils.js';
+import { TAU, makeRng } from '../src/utils.js';
 
 const ship = { x: 400, y: 300 };
 
-test('scaleFor grows 6% per wave', () => {
+test('scaleFor grows 7% per wave', () => {
   assert.equal(scaleFor(1), 1);
-  assert.ok(Math.abs(scaleFor(6) - 1.3) < 1e-9);
+  assert.ok(Math.abs(scaleFor(6) - 1.35) < 1e-9);
 });
 
 test('spawnEnemy applies wave scaling to hp and speed', () => {
   const e = spawnEnemy('drifter', 0, 0, 6);
-  assert.equal(e.hp, Math.round(ENEMIES.drifter.hp * 1.3));
-  assert.ok(Math.abs(e.speed - ENEMIES.drifter.speed * 1.3) < 1e-9);
+  assert.equal(e.hp, Math.round(ENEMIES.drifter.hp * 1.35));
+  assert.ok(Math.abs(e.speed - ENEMIES.drifter.speed * 1.35) < 1e-9);
   assert.equal(e.score, ENEMIES.drifter.score);
 });
 
@@ -195,14 +195,25 @@ function runBoss(e, secs, ship) {
   return out;
 }
 
-test('boss wave-scales hp/speed like others; radius/score unscaled', () => {
+test('boss wave-scales hp/speed like others (plus boss-number hp); radius/score unscaled', () => {
   const def = ENEMIES.boss;
   const e = spawnEnemy('boss', 0, 0, 6);
-  assert.equal(e.hp, Math.round(def.hp * 1.3));
-  assert.equal(e.maxHp, Math.round(def.hp * 1.3));
-  assert.ok(Math.abs(e.speed - def.speed * 1.3) < 1e-9);
+  // wave 6 → scaleFor 1.35, boss number B = 6/5 = 1.2 → hp mult 1 + 0.4*0.2 = 1.08
+  assert.equal(e.hp, Math.round(def.hp * 1.35 * 1.08));
+  assert.equal(e.maxHp, Math.round(def.hp * 1.35 * 1.08));
+  assert.ok(Math.abs(e.speed - def.speed * 1.35) < 1e-9); // speed ignores boss number
   assert.equal(e.radius, def.radius);
   assert.equal(e.score, def.score);
+});
+
+test('boss hp scales with boss number B = wave/5: hp × (1 + 0.4×(B−1))', () => {
+  const def = ENEMIES.boss;
+  // B=1 (wave 5): mult 1.0; B=2 (wave 10): mult 1.4; B=3 (wave 15): mult 1.8
+  assert.equal(spawnEnemy('boss', 0, 0, 5).hp, 77);   // round(60 * 1.28 * 1.0)
+  assert.equal(spawnEnemy('boss', 0, 0, 10).hp, 137); // round(60 * 1.63 * 1.4)
+  assert.equal(spawnEnemy('boss', 0, 0, 15).hp, 214); // round(60 * 1.98 * 1.8)
+  assert.equal(spawnEnemy('boss', 0, 0, 5).bossNum, 1);
+  assert.equal(spawnEnemy('boss', 0, 0, 15).bossNum, 3);
 });
 
 test('boss inits timers so nothing fires or spawns on the spawn frame', () => {
@@ -217,7 +228,7 @@ test('boss inits timers so nothing fires or spawns on the spawn frame', () => {
 test('boss slow-chases the ship in every phase', () => {
   for (const hp of [60, 30, 10]) {
     const e = spawnEnemy('boss', 0, 300, 1);
-    e.hp = hp;
+    e.maxHp = 60; e.hp = hp;
     const before = Math.hypot(ship.x - e.x, ship.y - e.y);
     updateEnemy(e, ship, 0.1, []);
     const after = Math.hypot(ship.x - e.x, ship.y - e.y);
@@ -228,12 +239,12 @@ test('boss slow-chases the ship in every phase', () => {
 test('P1 (>2/3 hp) fires a radial ring of ringCount shots on ringEvery cadence', () => {
   const def = ENEMIES.boss;
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 41; // 41/60 > 2/3 → P1
+  e.maxHp = 60; e.hp = 41; // 41/60 > 2/3 → P1
   // just under one ringEvery: no ring yet
   let out = runBoss(e, def.ringEvery - 2 / 60, ship);
   assert.equal(shots(out).length, 0, 'no ring before cadence');
-  // cross the threshold: exactly one ring of ringCount
-  out = runBoss(e, def.ringEvery + 2 / 60, ship);
+  // cross the ring cadence but stay before the 4s aimed burst → only the ring shows
+  out = runBoss(e, 0.1, ship);
   const s = shots(out);
   assert.equal(s.length, def.ringCount, 'one full ring of ringCount shots');
   // evenly spaced radial ring at shotSpeed
@@ -246,7 +257,7 @@ test('P1 (>2/3 hp) fires a radial ring of ringCount shots on ringEvery cadence',
 
 test('P1 never charges and never spawns minis', () => {
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 60; // full → P1
+  e.maxHp = 60; e.hp = 60; // full → P1
   const out = runBoss(e, 20, ship);
   assert.equal(spawns(out).length, 0, 'no minis in P1');
   assert.notEqual(e.state, 'windup');
@@ -256,7 +267,7 @@ test('P1 never charges and never spawns minis', () => {
 test('P2 (2/3–1/3 hp) telegraphs a charge: windup zeroes velocity, then lunges at chargeSpeed', () => {
   const def = ENEMIES.boss;
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 30; // 0.5 → P2
+  e.maxHp = 60; e.hp = 30; // 0.5 → P2
   const step = 1 / 60;
   // advance until the charge windup begins (chargeEvery)
   let t = 0;
@@ -280,7 +291,7 @@ test('P2 (2/3–1/3 hp) telegraphs a charge: windup zeroes velocity, then lunges
 test('P2 charge lasts chargeTime then resumes chasing', () => {
   const def = ENEMIES.boss;
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 30;
+  e.maxHp = 60; e.hp = 30;
   const step = 1 / 60;
   let t = 0;
   while (e.state !== 'charge' && t < 12) { updateEnemy(e, ship, step, []); t += step; }
@@ -291,19 +302,19 @@ test('P2 charge lasts chargeTime then resumes chasing', () => {
   assert.equal(e.state, 'chase');
 });
 
-test('P2 still fires 10-shot rings and never spawns minis', () => {
+test('P2 still fires 10-shot rings and never spawns minis (boss number 1)', () => {
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 30;
+  e.maxHp = 60; e.hp = 30;
   const out = runBoss(e, ENEMIES.boss.ringEvery + 2 / 60, ship);
   assert.equal(shots(out).length, ENEMIES.boss.ringCount);
   const long = runBoss(spawnBossAt30(), 20, ship);
-  assert.equal(spawns(long).length, 0);
+  assert.equal(spawns(long).length, 0); // B=0.2 < 2 → no P2 minis
 });
-function spawnBossAt30() { const e = spawnEnemy('boss', 100, 300, 1); e.hp = 30; return e; }
+function spawnBossAt30() { const e = spawnEnemy('boss', 100, 300, 1); e.maxHp = 60; e.hp = 30; return e; }
 
 test('P3 (<1/3 hp) rings become 14-shot spirals with start angle advancing 0.9 rad per ring', () => {
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 19; // 19/60 < 1/3 → P3
+  e.maxHp = 60; e.hp = 19; // 19/60 < 1/3 → P3
   const step = 1 / 60;
   const firsts = [];
   let ring = 0;
@@ -328,7 +339,7 @@ test('P3 (<1/3 hp) rings become 14-shot spirals with start angle advancing 0.9 r
 
 test('P3 spirals fire on a 2.2s cadence', () => {
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 19;
+  e.maxHp = 60; e.hp = 19;
   const step = 1 / 60;
   const times = [];
   let t = 0;
@@ -344,7 +355,7 @@ test('P3 spirals fire on a 2.2s cadence', () => {
 test('P3 spawns 2 mini markers every spawnEvery via the out array', () => {
   const def = ENEMIES.boss;
   const e = spawnEnemy('boss', 100, 300, 1);
-  e.hp = 10; // P3
+  e.maxHp = 60; e.hp = 10; // P3
   // just under spawnEvery: no spawns
   let out = runBoss(e, def.spawnEvery - 2 / 60, ship);
   assert.equal(spawns(out).length, 0, 'no spawns before spawnEvery');
@@ -356,6 +367,148 @@ test('P3 spawns 2 mini markers every spawnEvery via the out array', () => {
     assert.equal(m.spawn, 'mini');
     assert.equal(typeof m.x, 'number');
     assert.equal(typeof m.y, 'number');
+  }
+});
+
+// --- Boss difficulty v3 (spec F) ---
+
+test('P1 adds an aimed 3-shot burst every burstEvery, spread 0.12 rad, centered on the ship', () => {
+  const def = ENEMIES.boss;
+  const e = spawnEnemy('boss', 100, 300, 1);
+  e.maxHp = 60; e.hp = 50; // P1
+  const step = 1 / 60;
+  const burstTimes = [];
+  let burst = null, t = 0;
+  while (t < 9 && burstTimes.length < 2) {
+    const out = [];
+    updateEnemy(e, ship, step, out);
+    const s = shots(out);
+    if (s.length === 3) { burstTimes.push(t); if (!burst) burst = s; } // rings are 10, bursts are 3
+    t += step;
+  }
+  assert.equal(burstTimes.length, 2, 'two bursts seen');
+  assert.ok(Math.abs(burstTimes[0] - def.burstEvery) < 0.05, `first burst ~burstEvery (${burstTimes[0]})`);
+  assert.ok(Math.abs((burstTimes[1] - burstTimes[0]) - def.burstEvery) < 0.05, 'burst cadence = burstEvery');
+  // three shots at shotSpeed, offset {-0.12, 0, +0.12} from the boss→ship angle
+  for (const shot of burst) assert.ok(Math.abs(Math.hypot(shot.vx, shot.vy) - def.shotSpeed) < 1e-6);
+  const c = Math.atan2(ship.y - burst[0].y, ship.x - burst[0].x);
+  const offs = burst
+    .map(shot => { const a = Math.atan2(shot.vy, shot.vx); return Math.atan2(Math.sin(a - c), Math.cos(a - c)); })
+    .sort((x, y) => x - y);
+  assert.ok(Math.abs(offs[0] + 0.12) < 1e-6, `low shot -0.12 (${offs[0]})`);
+  assert.ok(Math.abs(offs[1]) < 1e-6, `middle shot aimed at ship (${offs[1]})`);
+  assert.ok(Math.abs(offs[2] - 0.12) < 1e-6, `high shot +0.12 (${offs[2]})`);
+});
+
+test('P2 adds a 12-shot bullet wall every wallEvery, alternating axis, traveling straight', () => {
+  const def = ENEMIES.boss;
+  const arena = { w: 800, h: 600 };
+  const e = spawnEnemy('boss', 100, 300, 1);
+  e.maxHp = 60; e.hp = 30; // P2
+  const step = 1 / 60;
+  const walls = [], wallTimes = [];
+  let t = 0;
+  while (t < 20 && walls.length < 2) {
+    const out = [];
+    updateEnemy(e, ship, step, out, arena);
+    const s = shots(out);
+    if (s.length === 12) { walls.push(s); wallTimes.push(t); } // rings are 10, walls are 12
+    t += step;
+  }
+  assert.equal(walls.length, 2, 'two walls seen');
+  assert.ok(Math.abs(wallTimes[0] - def.wallEvery) < 0.05, `first wall ~wallEvery (${wallTimes[0]})`);
+  assert.ok(Math.abs((wallTimes[1] - wallTimes[0]) - def.wallEvery) < 0.05, 'wall cadence = wallEvery');
+  // Wall 0: spawned along the left edge, every shot traveling straight right (+x).
+  const w0 = walls[0];
+  assert.ok(w0.every(s => Math.abs(s.vy) < 1e-9 && Math.abs(Math.abs(s.vx) - def.shotSpeed) < 1e-6), 'wall 0 travels straight along +x');
+  assert.ok(w0.every(s => Math.abs(s.x) < 1e-9), 'wall 0 spawns on the x=0 edge');
+  assert.ok(w0.every(s => s.y >= 0 && s.y <= arena.h), 'wall 0 spaced across the arena height');
+  assert.equal(new Set(w0.map(s => s.y)).size, 12, 'wall 0 is 12 distinct rows');
+  // Wall 1: perpendicular axis — top edge, traveling straight down (+y).
+  const w1 = walls[1];
+  assert.ok(w1.every(s => Math.abs(s.vx) < 1e-9 && Math.abs(Math.abs(s.vy) - def.shotSpeed) < 1e-6), 'wall 1 travels straight along +y');
+  assert.ok(w1.every(s => Math.abs(s.y) < 1e-9), 'wall 1 spawns on the y=0 edge');
+  assert.ok(w1.every(s => s.x >= 0 && s.x <= arena.w), 'wall 1 spaced across the arena width');
+});
+
+test('P3 blink: telegraph then rng reposition >= blinkMinDist from the ship, then an immediate ring', () => {
+  const def = ENEMIES.boss;
+  const arena = { w: 800, h: 600 };
+  const rng = makeRng(12345);
+  const e = spawnEnemy('boss', 100, 300, 1);
+  e.maxHp = 60; e.hp = 10; // P3
+  const step = 1 / 60;
+  // advance until the blink telegraph begins (blinkEvery)
+  let t = 0;
+  while (e.state !== 'blinkwind' && t < 12) { updateEnemy(e, ship, step, [], arena, rng); t += step; }
+  assert.equal(e.state, 'blinkwind', 'entered the blink telegraph');
+  assert.ok(Math.abs(t - def.blinkEvery) < 0.05, `blink starts ~blinkEvery (${t})`);
+  assert.equal(e.vx, 0); assert.equal(e.vy, 0); // frozen during the telegraph
+  const before = { x: e.x, y: e.y };
+  // run the telegraph out; capture the frame it teleports (state leaves blinkwind)
+  let arrival = null, tele = 0;
+  while (e.state === 'blinkwind' && tele < 2) {
+    const out = [];
+    updateEnemy(e, ship, step, out, arena, rng);
+    if (e.state !== 'blinkwind' && !arrival) arrival = out;
+    tele += step;
+  }
+  assert.ok(Math.abs(tele - def.blinkTelegraph) < 0.05, `telegraph ~blinkTelegraph (${tele})`);
+  assert.ok(e.x !== before.x || e.y !== before.y, 'boss actually moved');
+  const dAfter = Math.hypot(e.x - ship.x, e.y - ship.y);
+  assert.ok(dAfter >= def.blinkMinDist, `repositioned >= blinkMinDist (got ${dAfter})`);
+  assert.ok(e.x >= 0 && e.x <= arena.w && e.y >= 0 && e.y <= arena.h, 'lands inside the arena');
+  assert.ok(shots(arrival).length >= 10, 'fires an immediate full ring on arrival');
+  // deterministic under the same seed
+  const e2 = spawnEnemy('boss', 100, 300, 1);
+  e2.maxHp = 60; e2.hp = 10;
+  const rng2 = makeRng(12345);
+  let s2 = 0;
+  while (e2.state !== 'blinkwind' && s2 < 12) { updateEnemy(e2, ship, step, [], arena, rng2); s2 += step; }
+  while (e2.state === 'blinkwind') updateEnemy(e2, ship, step, [], arena, rng2);
+  assert.ok(Math.abs(e2.x - e.x) < 1e-9 && Math.abs(e2.y - e.y) < 1e-9, 'same seed → same reposition');
+});
+
+test('blink reposition without an rng is deterministic and still >= blinkMinDist', () => {
+  const def = ENEMIES.boss;
+  const arena = { w: 800, h: 600 };
+  const mk = () => { const e = spawnEnemy('boss', 100, 300, 1); e.maxHp = 60; e.hp = 10; return e; };
+  const step = 1 / 60;
+  const land = (e) => {
+    while (e.state !== 'blinkwind') updateEnemy(e, ship, step, [], arena);
+    while (e.state === 'blinkwind') updateEnemy(e, ship, step, [], arena);
+    return { x: e.x, y: e.y };
+  };
+  const a = land(mk()), b = land(mk());
+  assert.ok(Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9, 'fallback is deterministic');
+  assert.ok(Math.hypot(a.x - ship.x, a.y - ship.y) >= def.blinkMinDist, 'fallback still respects min distance');
+});
+
+test('boss number >= 2 also spawns minis in P2; boss number 1 does not', () => {
+  const def = ENEMIES.boss;
+  const b2 = spawnEnemy('boss', 0, 0, 10); // B = 2
+  b2.hp = Math.round(b2.maxHp * 0.5);       // P2 without disturbing bossNum
+  assert.equal(spawns(runBoss(b2, def.spawnEvery + 2 / 60, ship)).length, 2, 'B>=2 minis in P2');
+  const b1 = spawnEnemy('boss', 0, 0, 5);   // B = 1
+  b1.hp = Math.round(b1.maxHp * 0.5);
+  assert.equal(spawns(runBoss(b1, def.spawnEvery + 2 / 60, ship)).length, 0, 'B=1 no P2 minis');
+});
+
+test('boss number >= 3 fires 14-shot rings in P1 and P2', () => {
+  for (const frac of [0.9, 0.5]) { // P1 then P2
+    const e = spawnEnemy('boss', 100, 300, 15); // B = 3
+    e.hp = Math.round(e.maxHp * frac);
+    const step = 1 / 60;
+    let ring = null, t = 0;
+    while (!ring && t < 6) {
+      const out = [];
+      updateEnemy(e, ship, step, out, { w: 800, h: 600 });
+      const s = shots(out);
+      if (s.length > 3) ring = s; // skip the 3-shot P1 burst
+      t += step;
+    }
+    assert.ok(ring, `fired a ring at frac ${frac}`);
+    assert.equal(ring.length, 14, `B>=3 ring is 14 shots at frac ${frac}`);
   }
 });
 
@@ -378,8 +531,8 @@ test('new enemy types respect wave scaling on hp and speed', () => {
   for (const type of ['spitter', 'orbiter', 'weaver']) {
     const e = spawnEnemy(type, 0, 0, 6);
     const def = ENEMIES[type];
-    assert.equal(e.hp, Math.round(def.hp * 1.3), `${type} hp`);
-    assert.ok(Math.abs(e.speed - def.speed * 1.3) < 1e-9, `${type} speed`);
+    assert.equal(e.hp, Math.round(def.hp * 1.35), `${type} hp`);
+    assert.ok(Math.abs(e.speed - def.speed * 1.35) < 1e-9, `${type} speed`);
     assert.equal(e.score, def.score, `${type} score`);
   }
 });

@@ -1,4 +1,9 @@
 // src/upgrades.js
+import { CAPS, BOOST } from './config.js';
+
+const EPS = 1e-9;
+const MAGNET_CAP = 1.45 * 1.45; // Attractor: 2 stacks max
+
 export const UPGRADES = [
   { id: 'rapid',    name: 'Rapid Fire',      desc: '+25% fire rate',           apply: s => { s.mods.fireRate *= 1.25; } },
   { id: 'heavy',    name: 'Heavy Rounds',    desc: '+1 bullet damage',         apply: s => { s.mods.damage += 1; } },
@@ -10,17 +15,36 @@ export const UPGRADES = [
   { id: 'aegis',    name: 'Aegis Shield',    desc: 'Blocks 1 hit, recharges',  apply: s => { s.shield.owned = true; s.shield.up = true; } },
   { id: 'deadeye',      name: 'Deadeye',        desc: '+8% crit chance',              apply: s => { s.mods.critChance += 0.08; } },
   { id: 'executioner',  name: 'Executioner',    desc: '+50% crit damage',             apply: s => { s.mods.critMult += 0.5; } },
-  { id: 'extradash',    name: 'Extra Dash',     desc: '+1 dash charge (2 stacks max)',       apply: s => { s.dash.max += 1; s.dash.charges += 1; s.dash.stacks += 1; } },
-  { id: 'recovery',     name: 'Quick Recovery', desc: 'Dash recharges 25% faster',    apply: s => { s.mods.dashRate *= 1.25; } },
+  { id: 'boosttank',    name: 'Boost Tank',     desc: '+1 boost unit (2 stacks max)',
+    apply: s => { s.boost.units = Math.min(BOOST.maxUnits, s.boost.units + 1); s.boost.stacks = (s.boost.stacks || 0) + 1; } },
+  { id: 'attractor',    name: 'Attractor',      desc: '+45% gem pull radius (2 stacks max)',
+    apply: s => { s.mods.magnet = (s.mods.magnet || 1) * 1.45; } },
   { id: 'ricochet',     name: 'Ricochet',       desc: 'Bullets bounce off walls +1',  apply: s => { s.mods.bounce += 1; } },
   { id: 'overclock',    name: 'Overclock',      desc: '+10% fire rate & bullet speed', apply: s => { s.mods.fireRate *= 1.1; s.mods.bulletSpeed *= 1.1; } },
   { id: 'secondwind',   name: 'Second Wind',    desc: 'Heal 2',                       apply: s => { s.hp = Math.min(s.maxHp, s.hp + 2); } },
 ];
 
+// True once an upgrade's target stat is maxed out and it should stop being offered.
+function isExcluded(ship, id) {
+  const atCap = (mod, cap) => ship.mods[mod] >= cap - EPS;
+  switch (id) {
+    case 'aegis':     return ship.shield.owned;
+    case 'boosttank': return (ship.boost.stacks || 0) >= 2;
+    case 'attractor': return (ship.mods.magnet || 1) >= MAGNET_CAP - EPS;
+    case 'rapid':     return atCap('fireRate', CAPS.fireRate);
+    case 'engine':    return atCap('engine', CAPS.engine);
+    case 'velocity':  return atCap('bulletSpeed', CAPS.bulletSpeed);
+    case 'pierce':    return atCap('pierce', CAPS.pierce);
+    case 'spread':    return atCap('spread', CAPS.spread);
+    case 'ricochet':  return atCap('bounce', CAPS.bounce);
+    // Overclock touches both fireRate and bulletSpeed — only useless when both cap.
+    case 'overclock': return atCap('fireRate', CAPS.fireRate) && atCap('bulletSpeed', CAPS.bulletSpeed);
+    default:          return false;
+  }
+}
+
 export function rollOffers(ship, rng) {
-  const avail = UPGRADES.filter(u =>
-    !(u.id === 'aegis' && ship.shield.owned) &&
-    !(u.id === 'extradash' && ship.dash.stacks >= 2));
+  const avail = UPGRADES.filter(u => !isExcluded(ship, u.id));
   const offers = [];
   while (offers.length < 3 && avail.length > 0) {
     offers.push(avail.splice(Math.floor(rng() * avail.length), 1)[0]);
@@ -28,6 +52,18 @@ export function rollOffers(ship, rng) {
   return offers;
 }
 
+// Clamp every capped mod to its ceiling (spec E). Each cap is independent.
+function clampMods(ship) {
+  const m = ship.mods;
+  m.fireRate    = Math.min(m.fireRate, CAPS.fireRate);
+  m.engine      = Math.min(m.engine, CAPS.engine);
+  m.bulletSpeed = Math.min(m.bulletSpeed, CAPS.bulletSpeed);
+  m.pierce      = Math.min(m.pierce, CAPS.pierce);
+  m.spread      = Math.min(m.spread, CAPS.spread);
+  m.bounce      = Math.min(m.bounce, CAPS.bounce);
+}
+
 export function applyUpgrade(ship, id) {
   UPGRADES.find(u => u.id === id).apply(ship);
+  clampMods(ship);
 }

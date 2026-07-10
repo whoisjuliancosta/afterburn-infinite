@@ -16,6 +16,7 @@ export const ASSETS = {
   shipsUp: {},      // 'blue_01' -> native nose-up canvas (menu preview)
   large: {},        // 'large_red_01' -> pre-rotated canvas (nose faces +x)
   thrust: [],       // vertical-thrust 1..4, pre-rotated (plume trails -x / rear)
+  missile: [],      // rocket missile-1..2 frames, pre-rotated (nose faces +x)
   explosion: [],    // explosion 1..9 frames, unrotated (radial)
   projectiles: {},  // 'player'|'enemy'|'boss' -> pre-rotated capsule canvas
   missing: [],      // recorded 404s / decode failures, for diagnostics
@@ -124,6 +125,15 @@ export function loadAssets() {
     const idx = i - 1;
     jobs.push(loadInto(`fx/vertical-thrust-0${i}.png`, (img) => {
       ASSETS.thrust[idx] = rotateCW(img);
+    }));
+  }
+
+  // Rocket art: two-frame missile from the pack, faces UP → pre-rotate to +x so
+  // the engine's rotate-by-angle draw code works unchanged. Miss → code-gen dart.
+  for (let i = 1; i <= 2; i++) {
+    const idx = i - 1;
+    jobs.push(loadInto(`fx/missile-${i}.png`, (img) => {
+      ASSETS.missile[idx] = rotateCW(img);
     }));
   }
 

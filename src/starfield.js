@@ -9,10 +9,14 @@
 // Far -> near. count: stars in the layer; speed: drift px/s (bigger = nearer);
 // rScale: multiplies the star's base radius so near stars read as closer.
 const LAYERS = [
-  { count: 90, speed: 4, rScale: 0.7 },
-  { count: 50, speed: 9, rScale: 1.0 },
-  { count: 25, speed: 16, rScale: 1.3 },
+  { count: 150, speed: 4, rScale: 0.7 },
+  { count: 90, speed: 9, rScale: 1.0 },
+  { count: 50, speed: 16, rScale: 1.3 },
 ];
+
+// A handful of larger "bright" stars get a soft additive glow so the field has
+// depth accents. Distributed across the nearer layers at build time.
+const BRIGHT_COUNT = 12;
 
 // Drift heading: lower-left, i.e. (-1, +1) normalized so speed is the true px/s.
 const DIR = 1 / Math.SQRT2;
@@ -23,8 +27,10 @@ function makeStar(w, h, layer) {
     y: Math.random() * h,
     // Base radius 0.5..1.5, then scaled by the layer for parallax depth.
     r: (0.5 + Math.random()) * layer.rScale,
-    baseAlpha: 0.35 + Math.random() * 0.5,
+    // Base alpha lifted ~40% for readability over the dark arena.
+    baseAlpha: Math.min(1, (0.35 + Math.random() * 0.5) * 1.4),
     twinklePhase: Math.random() * Math.PI * 2,
+    bright: false,
   };
 }
 
@@ -34,6 +40,16 @@ export function createStarfield(w, h) {
     const stars = [];
     for (let i = 0; i < layer.count; i++) stars.push(makeStar(w, h, layer));
     sf.layers.push({ speed: layer.speed, stars });
+  }
+  // Promote ~12 stars in the nearer layers to "bright": bigger radius, full
+  // base alpha, and a soft additive glow at draw time.
+  const near = sf.layers.slice(1); // the two faster/closer layers
+  for (let i = 0; i < BRIGHT_COUNT && near.length; i++) {
+    const layer = near[i % near.length];
+    const s = layer.stars[Math.floor(Math.random() * layer.stars.length)];
+    s.bright = true;
+    s.r *= 1.9;
+    s.baseAlpha = 1;
   }
   return sf;
 }
@@ -66,6 +82,19 @@ export function drawStarfield(g, sf) {
       g.globalAlpha = a;
       // Dim blue-white: brighter stars trend whiter, dimmer trend bluer.
       g.fillStyle = s.baseAlpha > 0.65 ? '#dfe8ff' : '#9fb8e6';
+      if (s.bright) {
+        // Soft additive halo for the accent stars.
+        g.save();
+        g.globalCompositeOperation = 'lighter';
+        g.shadowBlur = 8;
+        g.shadowColor = '#bcd2ff';
+        g.fillStyle = '#eef4ff';
+        g.beginPath();
+        g.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+        continue;
+      }
       g.beginPath();
       g.arc(s.x, s.y, s.r, 0, Math.PI * 2);
       g.fill();

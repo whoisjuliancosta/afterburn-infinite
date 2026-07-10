@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { GEMS } from '../src/config.js';
 import { makeRng } from '../src/utils.js';
 import {
-  createGems, spawnGem, spawnGemRing, updateGems, gemBlinking, BLINK_TIME,
+  createGems, spawnGem, spawnGemRing, updateGems, gemBlinking, BLINK_TIME, rollDrop,
 } from '../src/gems.js';
 
 test('createGems starts empty', () => {
@@ -56,6 +56,26 @@ test('magnet does NOT pull a gem outside magnetRadius', () => {
   // dist 200 > 130: no acceleration, velocity stays zero, position unchanged
   assert.equal(g.list[0].vx, 0);
   assert.equal(g.list[0].x, 200);
+});
+
+test('updateGems honors an explicit (smaller) magnetRadius — no pull outside it', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 150, 0, 10, makeRng(1));
+  gem.vx = 0; gem.vy = 0;
+  const ship = { x: 0, y: 0, radius: 18 };
+  updateGems(g, ship, 0.1, 100); // 150 > 100 shrunk radius → no acceleration
+  assert.equal(g.list[0].vx, 0);
+  assert.equal(g.list[0].x, 150);
+});
+
+test('updateGems honors an explicit (larger) magnetRadius — pulls a gem the default ignores', () => {
+  const g = createGems();
+  const gem = spawnGem(g, 260, 0, 10, makeRng(1)); // 260 > default 200, would be ignored
+  gem.vx = 0; gem.vy = 0;
+  const ship = { x: 0, y: 0, radius: 18 };
+  updateGems(g, ship, 0.1, 300); // 260 < 300 → pulled toward origin
+  assert.ok(g.list[0].vx < 0);
+  assert.ok(g.list[0].x < 260);
 });
 
 test('gem speed is capped at GEMS.maxSpeed', () => {
@@ -143,6 +163,70 @@ test('spawnGemRing is deterministic under a seeded rng', () => {
   spawnGemRing(a, 0, 0, 10, 6, makeRng(99));
   spawnGemRing(b, 0, 0, 10, 6, makeRng(99));
   assert.deepEqual(a.list, b.list);
+});
+
+test('spawnGem defaults kind to blue and carries an explicit kind', () => {
+  const g = createGems();
+  const blue = spawnGem(g, 0, 0, 10, makeRng(1));
+  assert.equal(blue.kind, 'blue');
+  const red = spawnGem(g, 0, 0, 10, makeRng(1), 'red');
+  assert.equal(red.kind, 'red');
+});
+
+test('spawnGemRing propagates kind (default blue) to every gem', () => {
+  const g = createGems();
+  const reds = spawnGemRing(g, 0, 0, 10, 4, makeRng(1), 'red');
+  for (const gem of reds) assert.equal(gem.kind, 'red');
+  const g2 = createGems();
+  const blues = spawnGemRing(g2, 0, 0, 10, 3, makeRng(1));
+  for (const gem of blues) assert.equal(gem.kind, 'blue');
+});
+
+test('collected gems report their kind', () => {
+  const g = createGems();
+  spawnGem(g, 5, 0, 10, makeRng(1), 'red'); // within ship+gem radius
+  const ship = { x: 0, y: 0, radius: 18 };
+  const collected = updateGems(g, ship, 0.016);
+  assert.equal(collected.length, 1);
+  assert.equal(collected[0].kind, 'red');
+});
+
+test('rollDrop: blue when the roll lands under blueChance', () => {
+  assert.equal(rollDrop(() => 0.0, false), 'blue');
+  assert.equal(rollDrop(() => GEMS.blueChance - 1e-9, false), 'blue');
+});
+
+test('rollDrop: red in the band above blueChance, null beyond', () => {
+  // small enemy: red band is [0.35, 0.43)
+  assert.equal(rollDrop(() => GEMS.blueChance, false), 'red');
+  assert.equal(rollDrop(() => GEMS.blueChance + GEMS.redChance - 1e-9, false), 'red');
+  assert.equal(rollDrop(() => GEMS.blueChance + GEMS.redChance, false), null);
+  assert.equal(rollDrop(() => 0.99, false), null);
+});
+
+test('rollDrop: isBig doubles the red band (splitter/boss-class)', () => {
+  // a roll of 0.50 is null for a small enemy but red for a big one
+  const roll = GEMS.blueChance + GEMS.redChance + 1e-3; // 0.35 + 0.08 + eps = ~0.431
+  assert.equal(rollDrop(() => roll, false), null);
+  assert.equal(rollDrop(() => roll, true), 'red');
+  // upper edge of the doubled band [0.35, 0.51)
+  assert.equal(rollDrop(() => GEMS.blueChance + GEMS.redChance * 2 - 1e-9, true), 'red');
+  assert.equal(rollDrop(() => GEMS.blueChance + GEMS.redChance * 2, true), null);
+});
+
+test('rollDrop: seeded-rng distribution is mutually exclusive and roughly on target', () => {
+  const rng = makeRng(12345);
+  const N = 20000;
+  let blue = 0, red = 0, none = 0;
+  for (let i = 0; i < N; i++) {
+    const k = rollDrop(rng, false);
+    if (k === 'blue') blue++;
+    else if (k === 'red') red++;
+    else none++;
+  }
+  assert.equal(blue + red + none, N); // partitioned, mutually exclusive
+  assert.ok(Math.abs(blue / N - GEMS.blueChance) < 0.02, `blue rate ${blue / N}`);
+  assert.ok(Math.abs(red / N - GEMS.redChance) < 0.02, `red rate ${red / N}`);
 });
 
 test('gemBlinking is true only during the last BLINK_TIME seconds of life', () => {

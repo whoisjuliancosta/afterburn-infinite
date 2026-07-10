@@ -2,10 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createShip, updateShip } from '../src/ship.js';
-import { SHIP } from '../src/config.js';
+import { SHIP, BOOST } from '../src/config.js';
 
 const arena = { w: 800, h: 600 };
-const idle = { moveX: 0, moveY: 0, held: false, taps: 0 };
+const idle = { held: false, taps: 0, thrust: false, boosting: false };
 
 test('createShip has spec defaults', () => {
   const s = createShip(400, 300);
@@ -13,47 +13,40 @@ test('createShip has spec defaults', () => {
   assert.equal(s.maxHp, 3);
   assert.deepEqual(s.mods, {
     fireRate: 1, damage: 0, engine: 1, pierce: 0, spread: 0, bulletSpeed: 1,
-    critChance: 0, critMult: 0, dashRate: 1, bounce: 0,
+    critChance: 0, critMult: 0, magnet: 1, bounce: 0,
   });
   assert.deepEqual(s.shield, { owned: false, up: false });
+  assert.deepEqual(s.boost, { meter: 1, units: BOOST.baseUnits, stacks: 0 });
 });
 
 test('W thrusts toward the facing (forward), not screen-up', () => {
   const s = createShip(400, 300);
   s.angle = 0; // facing right
-  updateShip(s, { ...idle, moveX: 0, moveY: -1 }, 0.1, arena); // W
+  updateShip(s, { ...idle, thrust: true }, 0.1, arena);
   assert.ok(s.vx > 0);
   assert.ok(Math.abs(s.vy) < 1e-9);
 });
 
-test('D strafes to the ship\'s right of the facing', () => {
+test('W thrusts along an arbitrary facing', () => {
   const s = createShip(400, 300);
-  s.angle = 0; // facing right → ship's right is screen-down
-  updateShip(s, { ...idle, moveX: 1, moveY: 0 }, 0.1, arena);
+  s.angle = Math.PI / 2; // facing screen-down
+  updateShip(s, { ...idle, thrust: true }, 0.1, arena);
   assert.ok(s.vy > 0);
   assert.ok(Math.abs(s.vx) < 1e-9);
 });
 
-test('S backs away from the facing', () => {
+test('no thrust means only friction acts (coasting)', () => {
   const s = createShip(400, 300);
-  s.angle = 0;
-  updateShip(s, { ...idle, moveX: 0, moveY: 1 }, 0.1, arena);
-  assert.ok(s.vx < 0);
-});
-
-test('diagonal movement is normalized (no speed advantage)', () => {
-  const a = createShip(400, 300);
-  const b = createShip(400, 300);
-  updateShip(a, { ...idle, moveX: 1, moveY: 0 }, 0.1, arena);
-  updateShip(b, { ...idle, moveX: 1, moveY: 1 }, 0.1, arena);
-  assert.ok(Math.abs(Math.hypot(a.vx, a.vy) - Math.hypot(b.vx, b.vy)) < 1e-9);
+  s.vx = 200;
+  updateShip(s, idle, 0.5, arena);
+  assert.ok(s.vx < 200 && s.vx > 0); // slows but keeps drifting
 });
 
 test('friction damps velocity when coasting', () => {
   const s = createShip(400, 300);
   s.vx = 200;
   updateShip(s, idle, 0.5, arena);
-  assert.ok(s.vx < 200 && s.vx > 0); // slows but keeps drifting
+  assert.ok(s.vx < 200 && s.vx > 0);
 });
 
 test('speed is capped at maxSpeed * engine mod', () => {

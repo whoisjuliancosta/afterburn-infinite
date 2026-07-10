@@ -1,6 +1,10 @@
-export const DASH = { impulse: 560, charges: 2, rechargeTime: 6, damageCredit: 0.35, iframes: 0.25, speedCapMult: 1.8 };
+export const BOOST = { drainPerSec: 0.40, thrustMult: 2.4, speedMult: 1.9, baseUnits: 1, maxUnits: 3 };
 
 export const CRIT = { chance: 0.10, mult: 2 };
+
+// Upgrade stat caps (spec E). applyUpgrade clamps each mod here; rollOffers hides
+// an upgrade once its target mod is at cap.
+export const CAPS = { fireRate: 3, engine: 2, bulletSpeed: 2.5, pierce: 5, spread: 3, bounce: 3 };
 
 export const SHIP = {
   radius: 18,
@@ -37,20 +41,26 @@ export const ENEMIES = {
               weaveAmp: 70, weaveFreq: 0.9 },
   boss:     { cost: 0, hp: 60, speed: 32, radius: 42, score: 2000, unlock: 5,
               ringEvery: 3.0, ringCount: 10, chargeEvery: 7.0, chargeSpeed: 380,
-              chargeTime: 0.6, spawnEvery: 8.0, shotSpeed: 170, shotRadius: 6 },
+              chargeTime: 0.6, spawnEvery: 8.0, shotSpeed: 170, shotRadius: 6,
+              burstEvery: 4.0, wallEvery: 9.0, blinkEvery: 7.0,
+              blinkTelegraph: 0.6, blinkMinDist: 260 },
 };
 
 export const WAVE = {
   baseBudget: 4,
-  budgetPerWave: 2.5,        // budget = round(4 + 2.5*(wave-1) + 1.5*power)
+  budgetPerWave: 2.5,        // budget = round(4 + 2.5*(wave-1) + 1.5*power + late)
   powerBudget: 1.5,          // extra budget per player upgrade taken this run
-  scalePerWave: 0.06,        // +6% enemy hp/speed per wave
+  lateBudgetPerWave: 3,      // extra budget per wave past lateStart (accelerating)
+  lateStart: 10,             // wave after which the late budget term kicks in
+  scalePerWave: 0.07,        // +7% enemy hp/speed per wave
   spawnInterval: 1.1,        // s between trickled spawns at wave 1 (base)
-  spawnIntervalFloor: 0.35,  // fastest trickle
-  spawnIntervalStep: 0.05,   // spacing shaved per wave past 1
+  spawnIntervalFloor: 0.22,  // fastest trickle
+  spawnIntervalStep: 0.06,   // spacing shaved per wave past 1
   telegraphTime: 1.0,        // s of spawn warning marker
 };
 
 export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5), capped
 
-export const GEMS = { dropChance: 0.65, lifetime: 6, magnetRadius: 130, magnetAccel: 900, maxSpeed: 480, radius: 7, dashCredit: 0.12 };
+export const GEMS = { lifetime: 6, magnetRadius: 200, magnetAccel: 900, maxSpeed: 480, radius: 5, blueChance: 0.35, redChance: 0.08, boostFill: 0.10, heartFill: 0.10 };
+
+export const ROCKET = { cooldown: 5, speed: 360, damage: 8, aoeRadius: 110, radius: 6, range: 900 };

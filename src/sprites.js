@@ -301,6 +301,10 @@ const GEM_ROWS = [
 ];
 const GEM_A = { C: '#1fb8d4', E: '#5fe8ff', S: '#ffffff' };
 const GEM_B = { C: '#26c8e0', E: '#7ff2ff', S: '#7ff2ff' };
+// Red gem (hearts): same diamond grid, red/pink palette. Drawn ~30% smaller by
+// the renderer, same as the blue gem.
+const GEM_RED_A = { C: '#c42a2a', E: '#ff6a6a', S: '#ffffff' };
+const GEM_RED_B = { C: '#d63a3a', E: '#ff8f8f', S: '#ffd0d0' };
 
 // --------------------------------------------------------------- HEARTS ------
 const HEART_ROWS = [
@@ -324,15 +328,19 @@ const HEART_EMPTY_ROWS = [
 const HEART_EMPTY_PAL = { O: '#5a5560' };
 const SHIELD_HEART_PAL = { O: '#5ea8ff' };
 
-// -------------------------------------------------------------- DASH PIP -----
-const DASH_PIP_ROWS = [
-  '..C..',
-  '.CCC.',
-  'CCCCC',
-  '.CCC.',
-  '..C..',
+// --------------------------------------------------------------- ROCKET ------
+// Code-gen fallback for the right-click rocket (pack missile-1/2 override it
+// when loaded). A small grey dart facing +x with a warm exhaust flicker at the
+// rear (F, the animated token). D = body, T = nose tip.
+const ROCKET_ROWS = [
+  '..DD.....',
+  '.DDDDD...',
+  'FDDDDDDDT',
+  '.DDDDD...',
+  '..DD.....',
 ];
-const DASH_PIP_PAL = { C: '#3ecfe6' };
+const ROCKET_A = { D: '#9aa4ad', T: '#dfe8ff', F: '#ffcf6a' };
+const ROCKET_B = { D: '#9aa4ad', T: '#dfe8ff', F: '#ff8a3c' };
 
 // ---------------------------------------------------------------- ICONS ------
 // 16px-source procedural icons, one per upgrade id. Simple shapes; hud scales
@@ -441,25 +449,29 @@ function buildIcons() {
       g.beginPath(); g.moveTo(3, 3); g.lineTo(13, 13); g.stroke();
       g.beginPath(); g.moveTo(13, 3); g.lineTo(3, 13); g.stroke();
     }),
-    // extra dash — cyan double chevron
-    extradash: makeIcon((g) => {
+    // boost tank — a cyan fuel cell with an up-arrow (extra boost capacity)
+    boosttank: makeIcon((g) => {
+      g.fillStyle = '#0e2a30';
+      g.fillRect(2, 4, 10, 9);        // tank body (dark)
+      g.fillStyle = '#3ecfe6';
+      g.fillRect(2, 8, 10, 5);        // fuel fill (cyan)
       g.strokeStyle = '#3ecfe6';
-      g.lineWidth = 2;
-      for (const ox of [3, 8]) {
-        g.beginPath();
-        g.moveTo(ox, 3); g.lineTo(ox + 4, 8); g.lineTo(ox, 13);
-        g.stroke();
-      }
+      g.lineWidth = 1;
+      g.strokeRect(2.5, 4.5, 9, 8);
+      px(g, '#3ecfe6', 12, 6, 2, 4);  // nozzle cap
+      g.fillStyle = '#eaffff';        // up-arrow = boost
+      g.beginPath(); g.moveTo(7, 5); g.lineTo(9, 8); g.lineTo(5, 8); g.closePath(); g.fill();
     }),
-    // recovery — circular refresh arrow
-    recovery: makeIcon((g) => {
-      g.strokeStyle = '#63d471';
-      g.lineWidth = 2;
-      g.beginPath(); g.arc(8, 8, 5, Math.PI * 0.4, Math.PI * 1.9); g.stroke();
-      g.fillStyle = '#63d471';
-      g.beginPath();
-      g.moveTo(10, 1); g.lineTo(13, 4); g.lineTo(9, 5); g.closePath();
-      g.fill();
+    // attractor — concentric pull rings drawing a gem inward (magnet radius)
+    attractor: makeIcon((g) => {
+      g.strokeStyle = '#5fe8ff';
+      g.lineWidth = 1.5;
+      for (const rr of [3, 6, 9]) {
+        g.globalAlpha = 1 - (rr - 3) / 12;
+        g.beginPath(); g.arc(2, 8, rr, -Math.PI / 2.4, Math.PI / 2.4); g.stroke();
+      }
+      g.globalAlpha = 1;
+      disc(g, '#5fe8ff', 13, 8, 2);   // gem being pulled in
     }),
     // ricochet — bouncing angle path between walls
     ricochet: makeIcon((g) => {
@@ -514,12 +526,13 @@ export function initSprites(paint = 'metalic') {
   SPRITES.orbiter = makeFrames(ORBITER_ROWS, ORBITER_A, ORBITER_B);
   SPRITES.weaver = makeFrames(WEAVER_ROWS, WEAVER_A, WEAVER_B);
   SPRITES.boss = makeFrames(BOSS_ROWS, BOSS_A, BOSS_B);
-  SPRITES.gem = makeFrames(GEM_ROWS, GEM_A, GEM_B);
+  SPRITES.gem = makeFrames(GEM_ROWS, GEM_A, GEM_B);      // blue = boost
+  SPRITES.gemRed = makeFrames(GEM_ROWS, GEM_RED_A, GEM_RED_B); // red = hearts
+  SPRITES.rocket = makeFrames(ROCKET_ROWS, ROCKET_A, ROCKET_B); // code-gen dart
 
   SPRITES.heart = makeSprite(HEART_ROWS, HEART_PAL);
   SPRITES.heartEmpty = makeSprite(HEART_EMPTY_ROWS, HEART_EMPTY_PAL);
   SPRITES.shieldHeart = makeSprite(HEART_EMPTY_ROWS, SHIELD_HEART_PAL);
-  SPRITES.dashPip = makeSprite(DASH_PIP_ROWS, DASH_PIP_PAL);
 
   SPRITES.icons = buildIcons();
 
@@ -537,5 +550,11 @@ export function initSprites(paint = 'metalic') {
       const art = ASSETS.ships[key];
       if (art) SPRITES[type] = packFrames(art);
     }
+
+    // Rocket: pre-rotated pack missile frames when present (2-frame animation),
+    // otherwise the code-gen dart stays.
+    const missile = (ASSETS.missile || []).filter(Boolean);
+    if (missile.length >= 2) SPRITES.rocket = missile;
+    else if (missile.length === 1) SPRITES.rocket = packFrames(missile[0]);
   }
 }
