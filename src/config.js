@@ -53,4 +53,4 @@ export const WAVE = {
 
 export const SCORE = { streakStep: 5, maxMult: 5 }; // mult = 1 + floor(streak/5), capped
 
-export const GEMS = { dropChance: 0.65, lifetime: 6, magnetRadius: 130, magnetAccel: 900, maxSpeed: 480, radius: 7, dashCredit: 0.12 };
+export const GEMS = { lifetime: 6, magnetRadius: 200, magnetAccel: 900, maxSpeed: 480, radius: 5, blueChance: 0.35, redChance: 0.08, boostFill: 0.10, heartFill: 0.10 };

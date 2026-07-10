@@ -1,12 +1,12 @@
 // src/main.js
-import { WAVE, CRIT, GEMS } from './config.js';
+import { WAVE, CRIT } from './config.js';
 import { makeRng, loadBest, saveBest, clamp } from './utils.js';
 import { createShip, updateShip, updateGun } from './ship.js';
 import { updateBullets, circleHit, collideBullets } from './bullets.js';
 import { spawnEnemy, updateEnemy, deathSpawns } from './enemies.js';
 import { buildWave, scheduleWave } from './waves.js';
 import { createRun, addKill, hitPlayer, multiplier } from './run.js';
-import { createGems, spawnGem, spawnGemRing, updateGems, gemBlinking } from './gems.js';
+import { createGems, spawnGem, spawnGemRing, updateGems, gemBlinking, rollDrop } from './gems.js';
 import { loadBoard, recordRun, saveBoard, placed } from './board.js';
 import { rollOffers, applyUpgrade } from './upgrades.js';
 import { createFloaters, addFloater, updateFloaters } from './floaters.js';
@@ -119,7 +119,7 @@ function killEnemy(e) {
   enemies.push(...deathSpawns(e));
 
   // Gem value: spec formula, floor 10. Bosses always drop a 6-gem ring; other
-  // enemies roll GEMS.dropChance for a single scattered gem.
+  // enemies roll a single scattered gem via rollDrop (blue/red/none).
   const gemValue = Math.max(10, Math.round(e.score / 8));
   if (e.type === 'boss') {
     spawnGemRing(gems, e.x, e.y, gemValue, 6, rng);
@@ -132,7 +132,10 @@ function killEnemy(e) {
     addPause(fx, 0.05);
     sfxBossDown();
   } else {
-    if (rng() < GEMS.dropChance) spawnGem(gems, e.x, e.y, gemValue, rng);
+    // Gems v2: one mutually-exclusive roll → blue (boost) / red (heart) / none.
+    // Full collect-payout wiring lands in T7; this keeps drops flowing meanwhile.
+    const kind = rollDrop(rng, e.type === 'splitter');
+    if (kind) spawnGem(gems, e.x, e.y, gemValue, rng, kind);
     spawnExplosion(e.x, e.y, e.radius);
     burst(fx, e.x, e.y, '#ff9e3e', 7, rng, 160, true); // halved: sprite carries it
     addShake(fx, 5);
@@ -167,15 +170,14 @@ function damagePlayer() {
   }
 }
 
-// Award a single gem's payout: score (×multiplier), the gemsCollected stat, and
-// a shave off the active dash recharge. Shared by the collect path and the
-// wave-clear vacuum so both stay in lockstep. Visual/audio FX are the caller's.
+// Award a single gem's payout: score (×multiplier) and the gemsCollected stat.
+// Shared by the collect path and the wave-clear vacuum so both stay in lockstep.
+// Visual/audio FX are the caller's.
 function collectGem(gem) {
   run.score += gem.value * multiplier(run);
   run.stats.gemsCollected += 1;
-  if (ship.dash.charges < ship.dash.max) {
-    ship.dash.recharge = Math.max(0, ship.dash.recharge - GEMS.dashCredit);
-  }
+  // Boost/heart payouts (applyGem) are wired in T7; the old dash-credit shave is
+  // gone with the dash system.
 }
 
 function tickPlaying(snap, dt) {
