@@ -594,7 +594,7 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
   g.textBaseline = 'middle';
   g.font = `16px ${FONT}`;
   g.fillStyle = DIM;
-  g.fillText('W thrust · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
+  g.fillText('W thrust · S reverse · aim with mouse · hold SHIFT boost · right-click rocket', w / 2, h * 0.42);
   g.fillText('hold mouse: auto-fire (spray) · tap mouse: precise shots', w / 2, h * 0.47);
   if (best > 0) {
     g.fillStyle = ACCENT;
@@ -638,12 +638,14 @@ export function drawMenu(g, w, h, best, paint = 'metalic', board = [], t = 0) {
 
 // --------------------------------------------------------------- LEGEND -------
 // The LEGEND button on the menu (paytable entry). Single source of geometry for
-// drawing and click hit-testing, like paintRects. Sits under the leaderboard.
+// drawing and click hit-testing, like paintRects. Sits below the '— click to
+// start —' prompt (h*0.685 put it behind the picker's 3× ship preview).
 export function legendRect(w, h) {
   const u = Math.max(12, Math.round(w / 90));
   const bw = Math.round(u * 9);
   const bh = Math.round(u * 2.2);
-  return { x: Math.round(w / 2 - bw / 2), y: Math.round(h * 0.685), w: bw, h: bh };
+  const swatchH = Math.max(36, Math.round(u * 2.6)); // keep in sync with paintRects
+  return { x: Math.round(w / 2 - bw / 2), y: Math.round(h * 0.8 + swatchH + u * 3.4), w: bw, h: bh };
 }
 
 // A sprite (canvas or 2-frame array → frame 0) drawn to fit a box, aspect
