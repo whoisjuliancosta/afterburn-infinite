@@ -9,6 +9,7 @@ export const CAPS = { fireRate: 9, engine: 6, bulletSpeed: 7.5, pierce: 15, spre
 export const SHIP = {
   radius: 18,
   thrust: 680,       // px/s^2 (twin-stick: terminal speed thrust/friction exceeds the cap)
+  reverseMult: 0.6,  // reverse (S/↓) accel as a fraction of forward thrust — keeps backing off from dominating
   maxSpeed: 260,     // px/s
   friction: 2.4,     // exponential damping per second — light drift, responsive stops
   recoil: 18,        // px/s pushback per shot

@@ -97,3 +97,39 @@ test('no aim fields means angle is untouched (backward compatible)', () => {
   updateShip(s, idle, 0.1, arena);
   assert.equal(s.angle, 1.23);
 });
+
+// --- reverse thrust: S / ↓ backs off opposite the nose at SHIP.reverseMult ---
+
+test('reverse accelerates opposite the nose, scaled by reverseMult', () => {
+  const fwd = createShip(400, 300); fwd.angle = 0;
+  const rev = createShip(400, 300); rev.angle = 0;
+  updateShip(fwd, { ...idle, thrust: true }, 0.05, arena);
+  updateShip(rev, { ...idle, reverse: true }, 0.05, arena);
+  assert.ok(rev.vx < 0);                          // moves backward
+  assert.ok(Math.abs(rev.vy) < 1e-9);
+  // single frame, identical damping → reverse is exactly reverseMult of forward
+  assert.ok(Math.abs(rev.vx + fwd.vx * SHIP.reverseMult) < 1e-9);
+});
+
+test('reverse flag off is a no-op (only friction acts)', () => {
+  const s = createShip(400, 300); s.angle = 0; s.vx = 100;
+  updateShip(s, { ...idle, reverse: false }, 0.1, arena);
+  assert.ok(s.vx < 100 && s.vx > 0); // pure coast, no backward accel
+});
+
+test('engine mod scales reverse acceleration', () => {
+  const a = createShip(400, 300); a.angle = 0;
+  const b = createShip(400, 300); b.angle = 0; b.mods.engine = 2;
+  updateShip(a, { ...idle, reverse: true }, 0.02, arena);
+  updateShip(b, { ...idle, reverse: true }, 0.02, arena);
+  assert.ok(Math.abs(b.vx - 2 * a.vx) < 1e-9); // twice the engine → twice the reverse accel
+});
+
+test('thrust + reverse held together nets (1 - reverseMult) forward', () => {
+  const fwd = createShip(400, 300); fwd.angle = 0;
+  const both = createShip(400, 300); both.angle = 0;
+  updateShip(fwd, { ...idle, thrust: true }, 0.05, arena);
+  updateShip(both, { ...idle, thrust: true, reverse: true }, 0.05, arena);
+  assert.ok(both.vx > 0); // still nets forward at reverseMult < 1
+  assert.ok(Math.abs(both.vx - fwd.vx * (1 - SHIP.reverseMult)) < 1e-9);
+});

@@ -40,6 +40,7 @@ export function createInput(canvas) {
     poll() {
       const snap = {
         thrust: down.has('KeyW') || down.has('ArrowUp'),
+        reverse: down.has('KeyS') || down.has('ArrowDown'),
         boosting: down.has('ShiftLeft') || down.has('ShiftRight'), // continuous while Shift is held
         held, taps, clicked, clickX, clickY,
         aimX: mouseX, aimY: mouseY,
