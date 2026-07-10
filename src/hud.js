@@ -253,17 +253,60 @@ function drawRocketCooldown(g, cx, cy, size, cooldown) {
 }
 
 // ------------------------------------------------------------- FIELD RING ------
-// Faint cyan ring at the gem-magnet radius around the ship so the pull zone is
-// visible (spec C). ~0.08 alpha with a gentle pulse driven by the `t` clock.
+// Gem-magnet force field around the ship (spec v5.2 T2): two counter-rotating
+// dashed arcs + inward-drifting pull ticks so it reads as a pull zone, not a
+// static circle. Deterministic in `t`, no rng, no per-frame canvases, no
+// shadowBlur. Subtle: alpha in the 0.06–0.16 band (ticks peak ~0.25 at spawn).
 export function drawFieldRing(g, ship, radius, t = 0) {
   const pulse = 1 + Math.sin(t * 1.6) * 0.02;
+  const wave = Math.sin(t * 1.6) * 0.5 + 0.5; // 0..1
+  const cx = ship.x, cy = ship.y;
   g.save();
-  g.globalAlpha = 0.08 + 0.02 * (Math.sin(t * 1.6) * 0.5 + 0.5);
   g.strokeStyle = '#5fe8ff';
+
+  // Outer arc: rotates one way. Inner arc (0.94r): rotates the other way.
+  g.lineWidth = 1.5;
+  g.globalAlpha = 0.10 + 0.06 * wave;      // 0.10..0.16
+  g.setLineDash([14, 22]);
+  g.lineDashOffset = -t * 26;
+  g.beginPath();
+  g.arc(cx, cy, radius * pulse, 0, TAU);
+  g.stroke();
+
+  g.lineWidth = 1;
+  g.globalAlpha = 0.06 + 0.05 * wave;      // 0.06..0.11
+  g.setLineDash([6, 26]);
+  g.lineDashOffset = t * 34;               // opposite direction
+  g.beginPath();
+  g.arc(cx, cy, radius * 0.94 * pulse, 0, TAU);
+  g.stroke();
+
+  g.setLineDash([]);                       // reset dash before the ticks
+
+  // Inward-drifting pull ticks: 8 short radial segments, each cycling from the
+  // outer radius toward radius*0.55 and fading as they near the ship.
+  const TICKS = 8;
+  const R0 = radius * pulse;               // start radius (outer)
+  const R1 = radius * 0.55;                // end radius (inner)
+  const TICK_LEN = 10;
   g.lineWidth = 1.5;
   g.beginPath();
-  g.arc(ship.x, ship.y, radius * pulse, 0, TAU);
-  g.stroke();
+  for (let i = 0; i < TICKS; i++) {
+    const ang = (i / TICKS) * TAU;
+    const p = ((t * 0.45 + i / TICKS) % 1 + 1) % 1; // 0..1 drift phase
+    const r = R0 + (R1 - R0) * p;           // outer -> inner
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const rOuter = r;
+    const rInner = Math.max(R1, r - TICK_LEN);
+    // Fade in at spawn, fade out as it reaches the ship (peak ~0.25).
+    const fade = Math.sin(p * Math.PI);     // 0 at ends, 1 mid
+    g.globalAlpha = 0.05 + 0.20 * fade;
+    g.moveTo(cx + ca * rOuter, cy + sa * rOuter);
+    g.lineTo(cx + ca * rInner, cy + sa * rInner);
+    // Stroke per-tick so each keeps its own alpha.
+    g.stroke();
+    g.beginPath();
+  }
   g.restore();
   g.globalAlpha = 1;
 }
